@@ -1,7 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, JetBrains_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
+import MobileTopBar from "@/components/MobileTopBar";
+import ArtifactOverlay from "@/components/ArtifactOverlay";
 
 const display = Fraunces({
   variable: "--font-display",
@@ -27,15 +29,25 @@ export const metadata: Metadata = {
   description: "ChomuGirI — smart AI router + coder/auditor swarm, cloud terminal, artifacts and one-click deploy.",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
       className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}
     >
-      <body className="flex h-full min-h-full">
+      <body className="flex h-full min-h-full overflow-hidden">
         <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <MobileTopBar />
+          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        </div>
+        <ArtifactOverlay />
       </body>
     </html>
   );

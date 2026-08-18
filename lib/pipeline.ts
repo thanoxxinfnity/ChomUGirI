@@ -28,7 +28,9 @@ interface NemotronResult {
 /**
  * Runs the full Kimi (coder) <-> GLM (auditor) loop, escalating to DeepSeek R1 on a stuck
  * bug and finishing with a Nemotron safety pass. Yields progress events as it goes so the
- * caller can stream them straight to the client over SSE.
+ * caller can stream them straight to the client over SSE. These events are intentionally
+ * verbose (per-stage, per-round) — the UI decides how much of that to surface; by default it
+ * shows a single collapsed status line and keeps this log available on demand.
  */
 export async function* runPipeline(
   prompt: string,
@@ -38,7 +40,7 @@ export async function* runPipeline(
   let files: GeneratedFile[] = [];
 
   try {
-    yield { type: "stage", stage: "kimi", status: "start", message: "Kimi K3 code likh raha hai..." };
+    yield { type: "stage", stage: "kimi", status: "start", message: "Kimi K3 is writing the code..." };
     const kimiOut = await chatCompletion(
       providers.kimi,
       "Kimi K3",
@@ -51,12 +53,12 @@ export async function* runPipeline(
     files = parseFileBlocks(kimiOut);
     if (files.length === 0) {
       throw new ProviderError(
-        "Kimi K3 ne koi valid ### FILE: block nahi diya — response format check karo ya model change karo.",
+        "Kimi K3 didn't return a valid ### FILE: block — check the response format or try a different model.",
         "kimi",
       );
     }
     yield { type: "files", files };
-    yield { type: "stage", stage: "kimi", status: "end", message: `${files.length} file(s) generate hui.` };
+    yield { type: "stage", stage: "kimi", status: "end", message: `Generated ${files.length} file(s).` };
 
     let clean = false;
     let lastIssues: AuditIssue[] = [];
@@ -82,7 +84,7 @@ export async function* runPipeline(
       if (!audit) {
         yield {
           type: "log",
-          message: "GLM ka response parse nahi hua, raw text ki basis pe assume kar rahe hain issues hain.",
+          message: "GLM's response couldn't be parsed as JSON — treating it as unresolved issues.",
         };
         lastIssues = [{ file: "unknown", description: glmOut.slice(0, 500) }];
       } else {
@@ -95,9 +97,7 @@ export async function* runPipeline(
         stage: "glm",
         status: "end",
         iteration: i,
-        message: clean
-          ? "GLM: code clean hai."
-          : `GLM: ${lastIssues.length} issue(s) mile.`,
+        message: clean ? "GLM: code is clean." : `GLM: found ${lastIssues.length} issue(s).`,
       };
 
       if (clean) break;
@@ -108,7 +108,7 @@ export async function* runPipeline(
         stage: "kimi",
         status: "start",
         iteration: i,
-        message: `Kimi K3 issues fix kar raha hai (round ${i})...`,
+        message: `Kimi K3 is fixing issues (round ${i})...`,
       };
       const fixOut = await chatCompletion(
         providers.kimi,
@@ -129,7 +129,7 @@ export async function* runPipeline(
         files = mergeFiles(files, fixed);
         yield { type: "files", files };
       }
-      yield { type: "stage", stage: "kimi", status: "end", iteration: i, message: "Fix apply ho gaya." };
+      yield { type: "stage", stage: "kimi", status: "end", iteration: i, message: "Fix applied." };
     }
 
     if (!clean && lastIssues.length > 0) {
@@ -137,7 +137,7 @@ export async function* runPipeline(
         type: "stage",
         stage: "deepseek",
         status: "start",
-        message: "Kimi/GLM stuck ho gaye — DeepSeek R1 deep reasoning se bug solve kar raha hai...",
+        message: "Kimi/GLM got stuck — DeepSeek R1 is reasoning through the bug...",
       };
       const deepOut = await chatCompletion(
         providers.deepseek,
@@ -158,14 +158,14 @@ export async function* runPipeline(
         files = mergeFiles(files, deepFixed);
         yield { type: "files", files };
       }
-      yield { type: "stage", stage: "deepseek", status: "end", message: "DeepSeek R1 ka fix apply ho gaya." };
+      yield { type: "stage", stage: "deepseek", status: "end", message: "DeepSeek R1's fix applied." };
 
       yield {
         type: "stage",
         stage: "glm",
         status: "start",
         iteration: maxAuditLoops + 1,
-        message: "GLM 5.2 final recheck (DeepSeek ke fix ke baad)...",
+        message: "GLM 5.2 final recheck after DeepSeek's fix...",
       };
       const recheckOut = await chatCompletion(
         providers.glm,
@@ -184,12 +184,12 @@ export async function* runPipeline(
         iteration: maxAuditLoops + 1,
         message:
           recheck?.clean === true
-            ? "GLM: DeepSeek ke baad code clean hai."
-            : "GLM: kuch minor concerns reh sakte hain, Nemotron final check karega.",
+            ? "GLM: clean after DeepSeek's fix."
+            : "GLM: some minor concerns remain, Nemotron will do the final check.",
       };
     }
 
-    yield { type: "stage", stage: "nemotron", status: "start", message: "Nemotron 3 Ultra final safety check kar raha hai..." };
+    yield { type: "stage", stage: "nemotron", status: "start", message: "Nemotron 3 Ultra running the final safety check..." };
     const nemotronOut = await chatCompletion(
       providers.nemotron,
       "Nemotron 3 Ultra 550B",
@@ -208,14 +208,15 @@ export async function* runPipeline(
       type: "stage",
       stage: "nemotron",
       status: "end",
-      message: safety?.safe === false
-        ? `Nemotron ne aakhri fixes apply kiye: ${safety.notes ?? ""}`
-        : "Nemotron: code crash-safe aur production-ready hai.",
+      message:
+        safety?.safe === false
+          ? `Nemotron applied final fixes: ${safety.notes ?? ""}`
+          : "Nemotron: code is crash-safe and production-ready.",
     };
 
-    yield { type: "done", files, message: `100% clean code ready — ${files.length} file(s).` };
+    yield { type: "done", files, message: `Ready — ${files.length} file(s).` };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Pipeline me unexpected error aaya.";
+    const message = err instanceof Error ? err.message : "Unexpected error in the pipeline.";
     yield { type: "error", message, files };
   }
 }

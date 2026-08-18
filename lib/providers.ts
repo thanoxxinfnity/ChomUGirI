@@ -12,13 +12,10 @@ export class ProviderError extends Error {
 
 function assertConfigured(config: ProviderConfig, role: string) {
   if (!config.apiKey) {
-    throw new ProviderError(
-      `${role} ka API key set nahi hai. Settings me jaake key daalo.`,
-      role,
-    );
+    throw new ProviderError(`${role} has no API key set. Add one in Settings.`, role);
   }
   if (!config.baseUrl || !config.model) {
-    throw new ProviderError(`${role} ka base URL ya model id missing hai.`, role);
+    throw new ProviderError(`${role} is missing a base URL or model id.`, role);
   }
 }
 
@@ -62,13 +59,13 @@ async function* rawStream(
     });
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
-    throw new ProviderError(`${role} tak network request nahi pahunch payi: ${cause}`, role);
+    throw new ProviderError(`Couldn't reach ${role}: ${cause}`, role);
   }
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
     throw new ProviderError(
-      `${role} request fail hui (${res.status}): ${text.slice(0, 300)}`,
+      `${role} request failed (${res.status}): ${text.slice(0, 300)}`,
       role,
     );
   }
@@ -121,7 +118,7 @@ export async function chatCompletion(
     full += chunk;
   }
   if (!full) {
-    throw new ProviderError(`${role} ne khali response diya.`, role);
+    throw new ProviderError(`${role} returned an empty response.`, role);
   }
   return full;
 }

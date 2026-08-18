@@ -46,11 +46,11 @@ export default function CodeRunner({ files, envVars = [] }: { files: GeneratedFi
         const term = new Terminal({
           convertEol: true,
           fontSize: 13,
-          fontFamily: "var(--font-geist-mono), monospace",
+          fontFamily: "var(--font-mono), monospace",
           theme: {
-            background: "#1e1e1c",
-            foreground: "#eeece7",
-            cursor: "#d97757",
+            background: "#08080c",
+            foreground: "#f1f0f7",
+            cursor: "#7c5cff",
           },
         });
         const fit = new FitAddon();
@@ -118,7 +118,7 @@ export default function CodeRunner({ files, envVars = [] }: { files: GeneratedFi
       } catch (err) {
         if (!cancelled) {
           setStatus("error");
-          setErrorMsg(err instanceof Error ? err.message : "WebContainer boot fail hua.");
+          setErrorMsg(err instanceof Error ? err.message : "WebContainer failed to boot.");
         }
       }
     }
@@ -134,16 +134,16 @@ export default function CodeRunner({ files, envVars = [] }: { files: GeneratedFi
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border bg-bg-elevated px-3 py-2">
-        <div className="flex items-center gap-2 text-xs text-fg-muted">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-bg-elevated px-3 py-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-xs text-fg-muted">
           {status === "booting" && (
             <>
-              <Loader2 size={12} className="animate-spin" /> Sandbox boot ho raha hai...
+              <Loader2 size={12} className="animate-spin" /> Booting sandbox...
             </>
           )}
           {status === "installing" && (
             <>
-              <Loader2 size={12} className="animate-spin" /> Install/start ho raha hai...
+              <Loader2 size={12} className="animate-spin" /> Installing / starting...
             </>
           )}
           {status === "running" && previewUrl && (
@@ -153,12 +153,12 @@ export default function CodeRunner({ files, envVars = [] }: { files: GeneratedFi
           )}
           {status === "running" && !previewUrl && (
             <>
-              <Loader2 size={12} className="animate-spin" /> Server start ho raha hai, preview ka wait...
+              <Loader2 size={12} className="animate-spin" /> Starting server, waiting for preview...
             </>
           )}
           {status === "error" && <span className="text-danger">{errorMsg}</span>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {previewUrl && (
             <a
               href={previewUrl}
@@ -186,8 +186,8 @@ export default function CodeRunner({ files, envVars = [] }: { files: GeneratedFi
           {previewUrl ? (
             <iframe src={previewUrl} className="h-full w-full" title="Live preview" />
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-zinc-400">
-              Preview yahan aayega jab dev server ready ho jayega.
+            <div className="flex h-full items-center justify-center px-4 text-center text-sm text-zinc-400">
+              The preview shows up here once the dev server is ready.
             </div>
           )}
         </div>

@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 import JSZip from "jszip";
-import { Download, Rocket, X, Code, PlayCircle, Loader2, CheckCircle2 } from "lucide-react";
+import { Download, Rocket, X, Code, PlayCircle, Loader2, CheckCircle2, TerminalSquare } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import CodeRunner from "./CodeRunner";
 
-type Tab = "code" | "run";
+type Tab = "code" | "run" | "terminal";
 
 export default function ArtifactsPanel() {
   const activeArtifactId = useAppStore((s) => s.activeArtifactId);
@@ -14,6 +14,7 @@ export default function ArtifactsPanel() {
   const setActiveArtifactId = useAppStore((s) => s.setActiveArtifactId);
   const vercelToken = useAppStore((s) => s.settings.vercelToken);
   const envVars = useAppStore((s) => s.settings.envVars);
+  const cloudTerminalUrl = useAppStore((s) => s.settings.cloudTerminalUrl);
 
   const [tab, setTab] = useState<Tab>("code");
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -45,7 +46,7 @@ export default function ArtifactsPanel() {
     if (!artifact) return;
     if (!vercelToken) {
       setDeployState("error");
-      setDeployError("Settings me Vercel token pehle daalo.");
+      setDeployError("Add a Vercel token in Settings first.");
       return;
     }
     setDeployState("deploying");
@@ -62,18 +63,18 @@ export default function ArtifactsPanel() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Deploy fail hua");
+      if (!res.ok) throw new Error(data?.error ?? "Deploy failed");
       setDeployUrl(data.url);
       setDeployState("done");
     } catch (err) {
       setDeployState("error");
-      setDeployError(err instanceof Error ? err.message : "Deploy fail hua");
+      setDeployError(err instanceof Error ? err.message : "Deploy failed");
     }
   }
 
   return (
-    <div className="flex h-full w-full flex-col border-l border-border bg-bg">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+    <div className="flex h-full w-full flex-col bg-bg md:border-l md:border-border">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{artifact.title}</p>
           <p className="text-xs text-fg-muted">{artifact.files.length} files</p>
@@ -84,7 +85,7 @@ export default function ArtifactsPanel() {
             title="Download as zip"
             className="flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs text-fg-muted hover:text-fg"
           >
-            <Download size={13} /> Download
+            <Download size={13} /> <span className="hidden sm:inline">Download</span>
           </button>
           <button
             onClick={deploy}
@@ -99,13 +100,13 @@ export default function ArtifactsPanel() {
             ) : (
               <Rocket size={13} />
             )}
-            Deploy
+            <span className="hidden sm:inline">Deploy</span>
           </button>
           <button
             onClick={() => setActiveArtifactId(null)}
             className="rounded-md p-1.5 text-fg-muted hover:text-fg"
           >
-            <X size={15} />
+            <X size={16} />
           </button>
         </div>
       </div>
@@ -124,7 +125,7 @@ export default function ArtifactsPanel() {
       <div className="flex border-b border-border px-2">
         <button
           onClick={() => setTab("code")}
-          className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs ${
+          className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
             tab === "code" ? "border-accent text-fg" : "border-transparent text-fg-muted"
           }`}
         >
@@ -132,23 +133,35 @@ export default function ArtifactsPanel() {
         </button>
         <button
           onClick={() => setTab("run")}
-          className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs ${
+          className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
             tab === "run" ? "border-accent text-fg" : "border-transparent text-fg-muted"
           }`}
         >
-          <PlayCircle size={13} /> Run &amp; Terminal
+          <PlayCircle size={13} />
+          <span className="hidden sm:inline">Run &amp; Terminal</span>
+          <span className="sm:hidden">Run</span>
         </button>
+        {cloudTerminalUrl && (
+          <button
+            onClick={() => setTab("terminal")}
+            className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
+              tab === "terminal" ? "border-accent text-fg" : "border-transparent text-fg-muted"
+            }`}
+          >
+            <TerminalSquare size={13} /> <span className="hidden sm:inline">My Terminal</span>
+          </button>
+        )}
       </div>
 
       <div className="min-h-0 flex-1">
         {tab === "code" ? (
-          <div className="flex h-full">
-            <div className="w-44 shrink-0 overflow-y-auto border-r border-border py-2">
+          <div className="flex h-full flex-col sm:flex-row">
+            <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border p-2 sm:w-44 sm:flex-col sm:gap-0 sm:overflow-y-auto sm:border-b-0 sm:border-r sm:p-2">
               {artifact.files.map((f) => (
                 <button
                   key={f.path}
                   onClick={() => setActiveFile(f.path)}
-                  className={`block w-full truncate px-3 py-1.5 text-left text-xs ${
+                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-left text-xs sm:w-full sm:truncate sm:rounded-lg sm:px-3 sm:py-1.5 ${
                     (currentFile?.path ?? artifact.files[0]?.path) === f.path
                       ? "bg-bg-elevated text-fg"
                       : "text-fg-muted hover:text-fg"
@@ -165,8 +178,14 @@ export default function ArtifactsPanel() {
               </pre>
             </div>
           </div>
-        ) : (
+        ) : tab === "run" ? (
           <CodeRunner files={artifact.files} envVars={envVars} />
+        ) : (
+          <iframe
+            src={cloudTerminalUrl}
+            className="h-full w-full border-0"
+            title="Your cloud terminal"
+          />
         )}
       </div>
     </div>

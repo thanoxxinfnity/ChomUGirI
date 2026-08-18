@@ -2,13 +2,23 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { v4 as uuidv4 } from "uuid";
 import { DEFAULT_SETTINGS } from "./types";
-import type { AppSettings, Artifact, ConversationMessage, EnvVar, ProviderConfig, RoleKey } from "./types";
+import type {
+  AppSettings,
+  Artifact,
+  Conversation,
+  ConversationMessage,
+  EnvVar,
+  ProviderConfig,
+  RoleKey,
+} from "./types";
 
 interface AppState {
   settings: AppSettings;
   setProviderConfig: (role: RoleKey, patch: Partial<ProviderConfig>) => void;
   setVercelToken: (token: string) => void;
+  setCloudTerminalUrl: (url: string) => void;
   setForceCodeMode: (v: boolean) => void;
   setMaxAuditLoops: (n: number) => void;
   setEnvVars: (vars: EnvVar[]) => void;
@@ -16,20 +26,33 @@ interface AppState {
   updateEnvVar: (index: number, patch: Partial<EnvVar>) => void;
   removeEnvVar: (index: number) => void;
 
-  messages: ConversationMessage[];
+  conversations: Record<string, Conversation>;
+  activeConversationId: string | null;
+  startNewConversation: () => string;
+  setActiveConversationId: (id: string) => void;
+  deleteConversation: (id: string) => void;
   addMessage: (m: ConversationMessage) => void;
   updateMessage: (id: string, patch: Partial<ConversationMessage>) => void;
-  clearMessages: () => void;
 
   artifacts: Record<string, Artifact>;
   upsertArtifact: (a: Artifact) => void;
   activeArtifactId: string | null;
   setActiveArtifactId: (id: string | null) => void;
+
+  mobileSidebarOpen: boolean;
+  setMobileSidebarOpen: (v: boolean) => void;
+}
+
+function titleFromMessages(messages: ConversationMessage[]) {
+  const firstUser = messages.find((m) => m.role === "user");
+  if (!firstUser) return "New chat";
+  const trimmed = firstUser.content.trim().slice(0, 48);
+  return trimmed.length < firstUser.content.trim().length ? `${trimmed}…` : trimmed || "New chat";
 }
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       settings: DEFAULT_SETTINGS,
       setProviderConfig: (role, patch) =>
         set((s) => ({
@@ -43,6 +66,8 @@ export const useAppStore = create<AppState>()(
         })),
       setVercelToken: (token) =>
         set((s) => ({ settings: { ...s.settings, vercelToken: token } })),
+      setCloudTerminalUrl: (url) =>
+        set((s) => ({ settings: { ...s.settings, cloudTerminalUrl: url } })),
       setForceCodeMode: (v) =>
         set((s) => ({ settings: { ...s.settings, forceCodeMode: v } })),
       setMaxAuditLoops: (n) =>
@@ -64,33 +89,113 @@ export const useAppStore = create<AppState>()(
           settings: { ...s.settings, envVars: s.settings.envVars.filter((_, i) => i !== index) },
         })),
 
-      messages: [],
-      addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
-      updateMessage: (id, patch) =>
+      conversations: {},
+      activeConversationId: null,
+      startNewConversation: () => {
+        const id = uuidv4();
+        const now = Date.now();
         set((s) => ({
-          messages: s.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-        })),
-      clearMessages: () => set({ messages: [], artifacts: {}, activeArtifactId: null }),
+          conversations: {
+            ...s.conversations,
+            [id]: { id, title: "New chat", messages: [], createdAt: now, updatedAt: now },
+          },
+          activeConversationId: id,
+          activeArtifactId: null,
+          mobileSidebarOpen: false,
+        }));
+        return id;
+      },
+      setActiveConversationId: (id) =>
+        set({ activeConversationId: id, activeArtifactId: null, mobileSidebarOpen: false }),
+      deleteConversation: (id) =>
+        set((s) => {
+          const conversations = { ...s.conversations };
+          delete conversations[id];
+          const activeConversationId = s.activeConversationId === id ? null : s.activeConversationId;
+          return { conversations, activeConversationId };
+        }),
+      addMessage: (m) => {
+        let id = get().activeConversationId;
+        if (!id || !get().conversations[id]) id = get().startNewConversation();
+        set((s) => {
+          const convo = s.conversations[id!];
+          const messages = [...convo.messages, m];
+          return {
+            conversations: {
+              ...s.conversations,
+              [id!]: {
+                ...convo,
+                messages,
+                title: convo.title === "New chat" ? titleFromMessages(messages) : convo.title,
+                updatedAt: Date.now(),
+              },
+            },
+          };
+        });
+      },
+      updateMessage: (id, patch) =>
+        set((s) => {
+          const convoId = s.activeConversationId;
+          if (!convoId || !s.conversations[convoId]) return s;
+          const convo = s.conversations[convoId];
+          return {
+            conversations: {
+              ...s.conversations,
+              [convoId]: {
+                ...convo,
+                messages: convo.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+              },
+            },
+          };
+        }),
 
       artifacts: {},
       upsertArtifact: (a) =>
         set((s) => ({ artifacts: { ...s.artifacts, [a.id]: a } })),
       activeArtifactId: null,
-      setActiveArtifactId: (id) => set({ activeArtifactId: id }),
+      setActiveArtifactId: (id) => set({ activeArtifactId: id, mobileSidebarOpen: false }),
+
+      mobileSidebarOpen: false,
+      setMobileSidebarOpen: (v) => set({ mobileSidebarOpen: v }),
     }),
     {
       name: "chomugiri-store",
-      version: 2,
+      version: 3,
       partialize: (s) => ({
         settings: s.settings,
-        messages: s.messages,
+        conversations: s.conversations,
+        activeConversationId: s.activeConversationId,
         artifacts: s.artifacts,
       }),
       merge: (persisted, current) => {
-        const persistedState = (persisted ?? {}) as Partial<AppState>;
+        const persistedState = (persisted ?? {}) as Partial<AppState> & {
+          messages?: ConversationMessage[];
+        };
+
+        let conversations = persistedState.conversations ?? {};
+        let activeConversationId = persistedState.activeConversationId ?? null;
+
+        // Migrate the old single-thread `messages` shape (store v2 and earlier) into one conversation.
+        if (persistedState.messages?.length && Object.keys(conversations).length === 0) {
+          const id = uuidv4();
+          const now = Date.now();
+          conversations = {
+            [id]: {
+              id,
+              title: titleFromMessages(persistedState.messages),
+              messages: persistedState.messages,
+              createdAt: now,
+              updatedAt: now,
+            },
+          };
+          activeConversationId = id;
+        }
+
         return {
           ...current,
           ...persistedState,
+          conversations,
+          activeConversationId,
           settings: {
             ...DEFAULT_SETTINGS,
             ...current.settings,

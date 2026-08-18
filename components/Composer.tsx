@@ -30,14 +30,14 @@ export default function Composer({
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-4">
+    <div className="mx-auto w-full max-w-3xl px-3 pb-3 sm:px-4 sm:pb-4">
       <div className="rounded-[1.4rem] border border-border bg-bg-elevated p-2 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.6)] transition-shadow focus-within:border-border-strong focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={1}
-          placeholder="Message ChomuGirI... (app/code banane ko bolo to swarm khud activate ho jayega)"
+          placeholder="Message ChomuGirI... ask for an app or script to wake the swarm"
           className="max-h-48 min-h-[44px] w-full resize-none bg-transparent px-3 py-2 text-[15px] outline-none placeholder:text-fg-muted"
           style={{ height: "auto" }}
           onInput={(e) => {
@@ -50,7 +50,7 @@ export default function Composer({
           <button
             type="button"
             onClick={() => setForceCodeMode(!forceCodeMode)}
-            title="Force code pipeline mode (Kimi/GLM/DeepSeek/Nemotron) chahe message casual lage"
+            title="Force the coding pipeline (Kimi/GLM/DeepSeek/Nemotron) even for a casual-sounding message"
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
               forceCodeMode
                 ? "border-accent-2/50 bg-accent-2/15 text-accent-2"
@@ -71,8 +71,8 @@ export default function Composer({
           </button>
         </div>
       </div>
-      <p className="mt-2 text-center text-xs text-fg-muted">
-        Casual baat = fast reply. App/code request = poora AI swarm (Kimi → GLM → DeepSeek → Nemotron).
+      <p className="mt-2 hidden text-center text-xs text-fg-muted sm:block">
+        Casual chat gets a fast reply. App/code requests wake the full swarm (Kimi → GLM → DeepSeek → Nemotron).
       </p>
     </div>
   );

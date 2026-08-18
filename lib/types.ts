@@ -19,6 +19,9 @@ export interface AppSettings {
   forceCodeMode: boolean;
   maxAuditLoops: number;
   envVars: EnvVar[];
+  /** URL of a terminal the user hosts and exposes themselves (e.g. ttyd behind their own
+   *  ngrok/cloudflare tunnel). Never set by this app — purely user-supplied, embedded as-is. */
+  cloudTerminalUrl: string;
 }
 
 export const ROLE_LABELS: Record<RoleKey, string> = {
@@ -58,7 +61,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     kimi: {
       apiKey: "",
       baseUrl: PROVIDER_PRESETS.nim.baseUrl,
-      model: "meta/llama-3.3-70b-instruct",
+      model: "meta/llama-3.1-70b-instruct",
     },
     glm: {
       apiKey: "",
@@ -80,6 +83,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   forceCodeMode: false,
   maxAuditLoops: 3,
   envVars: [],
+  cloudTerminalUrl: "",
 };
 
 export interface ChatMessage {
@@ -109,6 +113,14 @@ export interface Artifact {
   title: string;
   files: GeneratedFile[];
   createdAt: number;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: ConversationMessage[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type PipelineStage = "router" | "kimi" | "glm" | "deepseek" | "nemotron" | "done" | "error";

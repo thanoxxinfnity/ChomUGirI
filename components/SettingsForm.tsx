@@ -30,8 +30,8 @@ function ProviderRow({ role }: { role: RoleKey }) {
   const preset = presetForBaseUrl(config.baseUrl);
 
   return (
-    <div className="rounded-xl border border-border bg-bg-elevated p-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="rounded-xl border border-border bg-bg-elevated p-3.5 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">{ROLE_LABELS[role]}</p>
         <select
           value={preset}
@@ -56,8 +56,8 @@ function ProviderRow({ role }: { role: RoleKey }) {
               type={showKey ? "text" : "password"}
               value={config.apiKey}
               onChange={(e) => setProviderConfig(role, { apiKey: e.target.value })}
-              placeholder="apna API key yahan daalo..."
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+              placeholder="Paste your API key..."
+              className="w-full min-w-0 rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
             />
             <button
               type="button"
@@ -104,22 +104,22 @@ function QuickFillNim() {
   }
 
   return (
-    <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
+    <div className="rounded-xl border border-accent/40 bg-accent/5 p-3.5 sm:p-4">
       <p className="flex items-center gap-1.5 text-sm font-medium text-accent">
-        <Zap size={14} /> Fast setup: ek NVIDIA NIM key se saare 5 roles
+        <Zap size={14} /> Fast setup: one NVIDIA NIM key for all 5 roles
       </p>
       <p className="mt-1 text-xs text-fg-muted">
-        NIM catalog me GLM 5.2 aur Nemotron 3 Ultra 550B literally exact models hain, aur baaki
-        roles ke liye bhi achhe defaults already daale hain. Apna NIM key ek baar daalo, sab
-        providers apply ho jayenge (model id har row me alag se edit kar sakte ho).
+        The NIM catalog has exact matches for GLM 5.2 and Nemotron 3 Ultra 550B, plus solid
+        defaults for the other roles already filled in. Paste your NIM key once and it applies
+        to every provider below (edit any model id per row afterwards).
       </p>
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
         <input
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           placeholder="nvapi-..."
-          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+          className="w-full min-w-0 rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
         />
         <button
           type="button"
@@ -141,11 +141,11 @@ function EnvVarsSection() {
   const [showValues, setShowValues] = useState(false);
 
   return (
-    <div className="rounded-xl border border-border bg-bg-elevated p-4">
-      <div className="mb-2 flex items-center justify-between">
+    <div className="rounded-xl border border-border bg-bg-elevated p-3.5 sm:p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-fg-muted">
-          Replit &quot;Secrets&quot; jaisa — ye variables generated project ke cloud terminal
-          shell me (aur Vercel deploy me) automatically inject hote hain.
+          Like Replit &quot;Secrets&quot; — these get injected into the generated project&apos;s
+          cloud terminal shell (and into Vercel deploys) automatically.
         </p>
         <button
           type="button"
@@ -164,14 +164,14 @@ function EnvVarsSection() {
               value={v.key}
               onChange={(e) => updateEnvVar(i, { key: e.target.value })}
               placeholder="KEY"
-              className="w-2/5 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
+              className="w-2/5 min-w-0 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
             />
             <input
               type={showValues ? "text" : "password"}
               value={v.value}
               onChange={(e) => updateEnvVar(i, { value: e.target.value })}
               placeholder="value"
-              className="flex-1 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
+              className="min-w-0 flex-1 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
             />
             <button
               type="button"
@@ -195,6 +195,32 @@ function EnvVarsSection() {
   );
 }
 
+function CloudTerminalSection() {
+  const cloudTerminalUrl = useAppStore((s) => s.settings.cloudTerminalUrl);
+  const setCloudTerminalUrl = useAppStore((s) => s.setCloudTerminalUrl);
+
+  return (
+    <div className="rounded-xl border border-border bg-bg-elevated p-3.5 sm:p-4">
+      <label className="mb-1 block text-xs text-fg-muted">Your terminal URL (optional)</label>
+      <input
+        value={cloudTerminalUrl}
+        onChange={(e) => setCloudTerminalUrl(e.target.value)}
+        placeholder="https://your-tunnel.ngrok-free.dev"
+        className="w-full min-w-0 rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+      />
+      <p className="mt-2 text-xs text-fg-muted">
+        Nothing is hardcoded here — this app never connects to any terminal on its own. If you
+        run your own web terminal (e.g.{" "}
+        <code className="rounded bg-bg-elevated-2 px-1.5 py-0.5">ttyd</code>) and expose it with
+        your own tunnel (ngrok, Cloudflare Tunnel, etc.), paste that URL here. It shows up as a
+        real, fully interactive &quot;My Terminal&quot; tab on every artifact — useful for things
+        the in-browser sandbox can&apos;t do, like a real Android SDK / Flutter build. Leave it
+        empty to only use the built-in sandbox.
+      </p>
+    </div>
+  );
+}
+
 export default function SettingsForm() {
   const vercelToken = useAppStore((s) => s.settings.vercelToken);
   const setVercelToken = useAppStore((s) => s.setVercelToken);
@@ -204,11 +230,11 @@ export default function SettingsForm() {
   const [savedFlash, setSavedFlash] = useState(false);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 sm:py-8">
       <h1 className="text-xl font-semibold">Settings</h1>
       <p className="mt-1 text-sm text-fg-muted">
-        Har key browser me (localStorage) save hoti hai aur sirf tab bheji jaati hai jab tum
-        khud message ya code-gen request bhejte ho — kisi third-party server pe store nahi hoti.
+        Every key lives in your browser (localStorage) and is only sent out when you send a
+        message or code request — nothing is stored on a third-party server.
       </p>
 
       <section className="mt-6 space-y-3">
@@ -218,7 +244,7 @@ export default function SettingsForm() {
           <ProviderRow key={role} role={role} />
         ))}
 
-        <div className="rounded-xl border border-border bg-bg-elevated p-4">
+        <div className="rounded-xl border border-border bg-bg-elevated p-3.5 sm:p-4">
           <label className="mb-1 block text-sm font-medium">
             GLM audit loop — max rounds before DeepSeek R1 escalation
           </label>
@@ -237,15 +263,15 @@ export default function SettingsForm() {
         <h2 className="flex items-center gap-2 text-sm font-semibold text-fg-muted">
           <Rocket size={14} /> Vercel Deploy
         </h2>
-        <div className="rounded-xl border border-border bg-bg-elevated p-4">
+        <div className="rounded-xl border border-border bg-bg-elevated p-3.5 sm:p-4">
           <label className="mb-1 block text-xs text-fg-muted">Vercel Access Token</label>
           <div className="flex items-center gap-2">
             <input
               type={showVercel ? "text" : "password"}
               value={vercelToken}
               onChange={(e) => setVercelToken(e.target.value)}
-              placeholder="vercel token..."
-              className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+              placeholder="Vercel token..."
+              className="w-full min-w-0 rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
             />
             <button
               type="button"
@@ -256,9 +282,8 @@ export default function SettingsForm() {
             </button>
           </div>
           <p className="mt-2 text-xs text-fg-muted">
-            Artifact panel ke &quot;Deploy&quot; button se seedha Vercel pe production deployment
-            ban jayega, environment variables (neeche wale) bhi deployment ke saath chale jayenge.
-            Token{" "}
+            The artifact panel&apos;s &quot;Deploy&quot; button ships straight to a Vercel
+            production deployment, including the environment variables below. Create a token at{" "}
             <a
               className="text-accent underline"
               href="https://vercel.com/account/tokens"
@@ -266,8 +291,8 @@ export default function SettingsForm() {
               rel="noreferrer"
             >
               vercel.com/account/tokens
-            </a>{" "}
-            se banao.
+            </a>
+            .
           </p>
         </div>
       </section>
@@ -281,34 +306,34 @@ export default function SettingsForm() {
         <h2 className="flex items-center gap-2 text-sm font-semibold text-fg-muted">
           <Terminal size={14} /> Cloud Terminal &amp; Code Runner
         </h2>
-        <div className="rounded-xl border border-border bg-bg-elevated p-4 text-sm text-fg-muted">
+        <div className="rounded-xl border border-border bg-bg-elevated p-3.5 text-sm text-fg-muted sm:p-4">
           <p>
-            Har artifact ke saath ek in-browser sandbox (WebContainers) attach hota hai — koi
-            alag connect/setup nahi karna, jaise hi code generate hota hai, artifact ke
-            <strong className="text-fg"> &quot;Run &amp; Terminal&quot;</strong> tab me jaake seedha
+            Every artifact ships with an in-browser sandbox (WebContainers) — nothing to connect
+            or set up. As soon as code is generated, open the artifact&apos;s{" "}
+            <strong className="text-fg">&quot;Run &amp; Terminal&quot;</strong> tab and{" "}
             <code className="mx-1 rounded bg-bg-elevated-2 px-1.5 py-0.5">npm install</code> /
-            <code className="mx-1 rounded bg-bg-elevated-2 px-1.5 py-0.5">npm run dev</code> khud
-            chal jaata hai aur live preview mil jaati hai — download kiye bina. Terminal fully
-            interactive hai, tum khud bhi commands type kar sakte ho, aur upar wale environment
-            variables shell me pehle se export ho chuke hote hain.
+            <code className="mx-1 rounded bg-bg-elevated-2 px-1.5 py-0.5">npm run dev</code> run
+            automatically, with a live preview — no download required. The terminal is fully
+            interactive, and any environment variables above are already exported into it.
           </p>
           <p className="mt-2 text-xs">
-            Note: ye ek browser-sandboxed Node.js runtime hai (WebContainers) — web apps, APIs,
-            scripts sab chalte hain, lekin native/compiled toolchains (jaise Android SDK/Gradle)
-            iske andar nahi chal sakte, kyunki wo real Linux binaries mangte hain jo browser
-            sandbox provide nahi karta.
+            Note: this is a browser-sandboxed Node.js runtime (WebContainers) — web apps, APIs,
+            and scripts all run fine, but native/compiled toolchains (like the Android SDK or
+            Gradle) can&apos;t run inside it, since those need a real Linux machine the browser
+            sandbox doesn&apos;t provide. For that, use your own terminal below.
           </p>
         </div>
+        <CloudTerminalSection />
       </section>
 
       <section className="mt-8 space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-fg-muted">
           <LayoutPanelLeft size={14} /> Canvas &amp; Artifacts
         </h2>
-        <div className="rounded-xl border border-border bg-bg-elevated p-4 text-sm text-fg-muted">
-          Generated code hamesha right-side artifact panel me open hota hai (Claude-style) — code
-          view, live run/preview, download-as-zip aur deploy sab wahin se milta hai. Purane
-          artifacts conversation history ke saath localStorage me save rehte hain.
+        <div className="rounded-xl border border-border bg-bg-elevated p-3.5 text-sm text-fg-muted sm:p-4">
+          Generated code always opens in the artifact panel — code view, live run/preview,
+          download-as-zip, and deploy all live there. Past artifacts stay saved with the
+          conversation history in localStorage.
         </div>
       </section>
 
@@ -320,7 +345,7 @@ export default function SettingsForm() {
         className="mt-8 flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-fg hover:bg-accent-hover"
       >
         <Save size={14} />
-        {savedFlash ? "Saved!" : "Settings pehle se hi auto-save hoti hain"}
+        {savedFlash ? "Saved!" : "Settings save automatically"}
       </button>
     </div>
   );

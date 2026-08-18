@@ -25,11 +25,11 @@ export default function MessageBubble({ message }: { message: ConversationMessag
 
       <div className={`min-w-0 max-w-[75ch] flex-1 ${isUser ? "flex justify-end" : ""}`}>
         <div
-          className={`inline-block w-full rounded-2xl px-4 py-3 ${
+          className={`inline-block w-full rounded-2xl px-3 py-3 sm:px-4 ${
             isUser ? "bg-bg-elevated text-fg" : "bg-transparent"
           }`}
         >
-          {message.pipelineEvents && message.pipelineEvents.length > 0 && (
+          {message.kind === "pipeline" && message.pipelineEvents && message.pipelineEvents.length > 0 && (
             <PipelineStatus events={message.pipelineEvents} />
           )}
 

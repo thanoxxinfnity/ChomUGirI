@@ -27,10 +27,10 @@ export async function POST(req: NextRequest) {
   const { vercelToken, projectName, files, teamId, envVars } = body;
 
   if (!vercelToken) {
-    return Response.json({ error: "Vercel token settings me set nahi hai." }, { status: 400 });
+    return Response.json({ error: "No Vercel token set in Settings." }, { status: 400 });
   }
   if (!files?.length) {
-    return Response.json({ error: "Deploy karne ke liye koi file nahi mili." }, { status: 400 });
+    return Response.json({ error: "No files to deploy." }, { status: 400 });
   }
 
   const safeName = (projectName || "chomugiri-app")
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
 
   if (!res.ok) {
     return Response.json(
-      { error: data?.error?.message ?? `Vercel deploy fail hua (${res.status})`, details: data },
+      { error: data?.error?.message ?? `Vercel deploy failed (${res.status})`, details: data },
       { status: res.status },
     );
   }

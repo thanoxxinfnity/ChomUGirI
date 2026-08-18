@@ -7,16 +7,21 @@ import { readSseStream } from "@/lib/sse-client";
 import type { ChatMessage, ConversationMessage } from "@/lib/types";
 import Composer from "./Composer";
 import MessageBubble from "./MessageBubble";
-import ArtifactsPanel from "./ArtifactsPanel";
 import Logomark from "./Logomark";
 
+// Stable reference: a selector must never return a fresh literal like `[]` on every call, or
+// zustand's useSyncExternalStore sees "the snapshot changed" on every render and loops forever.
+const EMPTY_MESSAGES: ConversationMessage[] = [];
+
 export default function ChatView() {
-  const messages = useAppStore((s) => s.messages);
+  const activeConversationId = useAppStore((s) => s.activeConversationId);
+  const messages = useAppStore((s) =>
+    s.activeConversationId ? (s.conversations[s.activeConversationId]?.messages ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
+  );
   const addMessage = useAppStore((s) => s.addMessage);
   const updateMessage = useAppStore((s) => s.updateMessage);
   const upsertArtifact = useAppStore((s) => s.upsertArtifact);
   const setActiveArtifactId = useAppStore((s) => s.setActiveArtifactId);
-  const activeArtifactId = useAppStore((s) => s.activeArtifactId);
   const settings = useAppStore((s) => s.settings);
 
   const [busy, setBusy] = useState(false);
@@ -53,6 +58,12 @@ export default function ChatView() {
       .filter((m) => m.kind === "chat")
       .map((m) => ({ role: m.role, content: m.content }));
 
+    function currentAssistantMessage() {
+      const convoId = useAppStore.getState().activeConversationId;
+      const convo = convoId ? useAppStore.getState().conversations[convoId] : undefined;
+      return convo?.messages.find((m) => m.id === assistantId);
+    }
+
     try {
       const res = await fetch("/api/router", {
         method: "POST",
@@ -68,7 +79,7 @@ export default function ChatView() {
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => null);
-        throw new Error(errBody?.error ?? `Router request fail hui (${res.status})`);
+        throw new Error(errBody?.error ?? `Router request failed (${res.status})`);
       }
 
       let artifactCreated = false;
@@ -80,17 +91,13 @@ export default function ChatView() {
             pipelineEvents: [ev],
           });
         } else if (ev.type === "stage" || ev.type === "log") {
-          updateMessage(assistantId, (() => {
-            const current = useAppStore.getState().messages.find((m) => m.id === assistantId);
-            return { pipelineEvents: [...(current?.pipelineEvents ?? []), ev] };
-          })());
+          const current = currentAssistantMessage();
+          updateMessage(assistantId, { pipelineEvents: [...(current?.pipelineEvents ?? []), ev] });
         } else if (ev.type === "chat-chunk") {
-          const current = useAppStore.getState().messages.find((m) => m.id === assistantId);
+          const current = currentAssistantMessage();
           updateMessage(assistantId, { content: (current?.content ?? "") + (ev.message ?? "") });
         } else if (ev.type === "files" && ev.files) {
-          const existingArtifactId = useAppStore.getState().messages.find(
-            (m) => m.id === assistantId,
-          )?.artifactId;
+          const existingArtifactId = currentAssistantMessage()?.artifactId;
           const artifactId = artifactCreated && existingArtifactId ? existingArtifactId : uuidv4();
           artifactCreated = true;
           upsertArtifact({
@@ -99,16 +106,13 @@ export default function ChatView() {
             files: ev.files,
             createdAt: Date.now(),
           });
-          updateMessage(assistantId, { artifactId });
+          updateMessage(assistantId, { artifactId, content: summarize(ev.files.length) });
           setActiveArtifactId(artifactId);
         } else if (ev.type === "done") {
-          const current = useAppStore.getState().messages.find((m) => m.id === assistantId);
+          const current = currentAssistantMessage();
           updateMessage(assistantId, {
             streaming: false,
-            content:
-              current?.kind === "pipeline"
-                ? current.content || ev.message || "Code ready — right panel me dekho."
-                : current?.content,
+            content: current?.kind === "pipeline" ? current.content || summarize(0) : current?.content,
           });
         } else if (ev.type === "error") {
           updateMessage(assistantId, { streaming: false, error: ev.message });
@@ -119,7 +123,7 @@ export default function ChatView() {
     } catch (err) {
       updateMessage(assistantId, {
         streaming: false,
-        error: err instanceof Error ? err.message : "Kuch galat ho gaya.",
+        error: err instanceof Error ? err.message : "Something went wrong.",
       });
     } finally {
       setBusy(false);
@@ -127,28 +131,20 @@ export default function ChatView() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
-            <EmptyState />
-          ) : (
-            <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8">
-              {messages.map((m) => (
-                <MessageBubble key={m.id} message={m} />
-              ))}
-              <div ref={scrollRef} />
-            </div>
-          )}
-        </div>
-        <Composer onSend={handleSend} disabled={busy} />
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {messages.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <div key={activeConversationId} className="mx-auto flex max-w-3xl flex-col gap-6 px-3 py-6 sm:px-4 sm:py-8">
+            {messages.map((m) => (
+              <MessageBubble key={m.id} message={m} />
+            ))}
+            <div ref={scrollRef} />
+          </div>
+        )}
       </div>
-
-      {activeArtifactId && (
-        <div className="hidden w-[46%] shrink-0 md:block">
-          <ArtifactsPanel />
-        </div>
-      )}
+      <Composer onSend={handleSend} disabled={busy} />
     </div>
   );
 }
@@ -158,9 +154,15 @@ function guessTitle(prompt: string) {
   return trimmed.length < prompt.trim().length ? `${trimmed}…` : trimmed || "Generated project";
 }
 
+function summarize(fileCount: number) {
+  return fileCount > 0
+    ? `Done — ${fileCount} file${fileCount === 1 ? "" : "s"} ready. Open the panel to view, run, or download.`
+    : "Done. Open the panel to view, run, or download.";
+}
+
 function EmptyState() {
   const stages = [
-    { label: "Fast Chat", note: "casual baat" },
+    { label: "Fast Chat", note: "casual talk" },
     { label: "Kimi K3", note: "coder" },
     { label: "GLM 5.2", note: "auditor" },
     { label: "DeepSeek R1", note: "fallback" },
@@ -168,22 +170,22 @@ function EmptyState() {
   ];
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-7 px-4 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent">
-        <Logomark size={24} />
+    <div className="flex h-full flex-col items-center justify-center gap-6 px-4 text-center sm:gap-7">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent sm:h-12 sm:w-12">
+        <Logomark size={22} />
       </div>
       <div>
-        <h1 className="font-display text-2xl font-medium">ChomuGirI mein aapka swagat hai</h1>
+        <h1 className="font-display text-xl font-medium sm:text-2xl">Welcome to ChomuGirI</h1>
         <p className="mt-2 max-w-md text-sm text-fg-muted">
-          Casual baat karo to fast reply milega. Koi app, website ya script banane ko bolo to
-          poora AI swarm khud kaam pe lag jayega.
+          Casual conversation gets a fast reply. Ask for an app, website, or script and the full
+          AI swarm takes over automatically.
         </p>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center justify-center gap-1">
         {stages.map((s, i) => (
           <div key={s.label} className="flex items-center gap-1">
-            <div className="flex flex-col items-center gap-1 rounded-xl border border-border bg-bg-elevated/70 px-3 py-2">
+            <div className="flex flex-col items-center gap-1 rounded-xl border border-border bg-bg-elevated/70 px-2.5 py-2 sm:px-3">
               <span className="font-mono text-[11px] text-fg">{s.label}</span>
               <span className="text-[10px] text-fg-muted">{s.note}</span>
             </div>

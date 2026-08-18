@@ -21,7 +21,7 @@ async function* chatGenerator(
   history: ChatMessage[],
   providers: ProviderSettings,
 ): AsyncGenerator<PipelineEvent> {
-  yield { type: "route", mode: "chat", message: "Fast Chat Model se jawab aa raha hai..." };
+  yield { type: "route", mode: "chat", message: "Fast Chat Model responding..." };
   try {
     const messages: ChatMessage[] = [
       { role: "system", content: FAST_CHAT_SYSTEM_PROMPT },
@@ -33,7 +33,7 @@ async function* chatGenerator(
     }
     yield { type: "done" };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Fast chat me error aaya.";
+    const message = err instanceof Error ? err.message : "Something went wrong in fast chat.";
     yield { type: "error", message };
   }
 }
@@ -49,7 +49,7 @@ async function* routedGenerator(body: RouterRequestBody): AsyncGenerator<Pipelin
   yield {
     type: "route",
     mode: "pipeline",
-    message: "Code/app request detect hua — heavy AI swarm (Kimi -> GLM -> DeepSeek -> Nemotron) activate ho raha hai...",
+    message: "Code request detected — the swarm (Kimi -> GLM -> DeepSeek -> Nemotron) is on it.",
   };
   yield* runPipeline(body.prompt, body.providers, body.maxAuditLoops ?? 3);
 }
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!body?.prompt || !body?.providers) {
-    return new Response(JSON.stringify({ error: "prompt aur providers required hain" }), {
+    return new Response(JSON.stringify({ error: "prompt and providers are required" }), {
       status: 400,
     });
   }
