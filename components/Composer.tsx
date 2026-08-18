@@ -31,7 +31,7 @@ export default function Composer({
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-4">
-      <div className="rounded-2xl border border-border bg-bg-elevated p-2 shadow-lg">
+      <div className="rounded-[1.4rem] border border-border bg-bg-elevated p-2 shadow-[0_8px_30px_-12px_rgba(0,0,0,0.6)] transition-shadow focus-within:border-border-strong focus-within:shadow-[0_0_0_3px_var(--accent-soft)]">
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -53,7 +53,7 @@ export default function Composer({
             title="Force code pipeline mode (Kimi/GLM/DeepSeek/Nemotron) chahe message casual lage"
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
               forceCodeMode
-                ? "border-accent bg-accent/15 text-accent"
+                ? "border-accent-2/50 bg-accent-2/15 text-accent-2"
                 : "border-border text-fg-muted hover:text-fg"
             }`}
           >

@@ -1,19 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #262624;
-  --bg-sidebar: #1e1e1c;
-  --bg-elevated: #30302e;
-  --bg-elevated-2: #3a3a37;
-  --border: #40403d;
-  --fg: #eeece7;
-  --fg-muted: #a8a6a1;
-  --accent: #d97757;
-  --accent-hover: #c76a4d;
-  --accent-fg: #1e1e1c;
-  --danger: #e5645a;
-  --success: #7fb069;
-  --warn: #e0b04d;
+  --bg: #0c0c11;
+  --bg-sidebar: #08080c;
+  --bg-elevated: #15151d;
+  --bg-elevated-2: #1f1f2a;
+  --border: #26262f;
+  --border-strong: #34343f;
+  --fg: #f1f0f7;
+  --fg-muted: #8d8b9c;
+  --accent: #7c5cff;
+  --accent-hover: #6c48ff;
+  --accent-soft: #7c5cff1f;
+  --accent-fg: #0c0c11;
+  --accent-2: #ffb454;
+  --danger: #ff6b6b;
+  --success: #5fd9a4;
+  --warn: #ffb454;
 }
 
 @theme inline {
@@ -22,16 +25,20 @@
   --color-bg-elevated: var(--bg-elevated);
   --color-bg-elevated-2: var(--bg-elevated-2);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
   --color-success: var(--success);
   --color-warn: var(--warn);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
 }
 
 * {
@@ -44,9 +51,21 @@ body {
 }
 
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, #7c5cff14, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #ffb45410, transparent 55%),
+    var(--bg);
   color: var(--fg);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01" 1;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), ui-serif, serif;
+  text-wrap: balance;
+  letter-spacing: -0.01em;
 }
 
 ::-webkit-scrollbar {
@@ -73,7 +92,7 @@ body {
 .prose-chat pre {
   background: var(--bg-sidebar);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 12px 14px;
   overflow-x: auto;
   margin: 0.75em 0;
@@ -92,8 +111,9 @@ body {
   margin: 0 0 0.75em 1.25em;
 }
 .prose-chat a {
-  color: var(--accent);
+  color: var(--accent-2);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 @keyframes pulse-dot {
@@ -107,4 +127,26 @@ body {
 }
 .pulse-dot {
   animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes stage-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--accent-soft);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--accent-soft),
+      0 0 14px 1px #7c5cff40;
+  }
+}
+.stage-active {
+  animation: stage-glow 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot,
+  .stage-active {
+    animation: none;
+  }
 }

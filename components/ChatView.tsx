@@ -8,7 +8,7 @@ import type { ChatMessage, ConversationMessage } from "@/lib/types";
 import Composer from "./Composer";
 import MessageBubble from "./MessageBubble";
 import ArtifactsPanel from "./ArtifactsPanel";
-import { Sparkles } from "lucide-react";
+import Logomark from "./Logomark";
 
 export default function ChatView() {
   const messages = useAppStore((s) => s.messages);
@@ -159,17 +159,37 @@ function guessTitle(prompt: string) {
 }
 
 function EmptyState() {
+  const stages = [
+    { label: "Fast Chat", note: "casual baat" },
+    { label: "Kimi K3", note: "coder" },
+    { label: "GLM 5.2", note: "auditor" },
+    { label: "DeepSeek R1", note: "fallback" },
+    { label: "Nemotron", note: "safety net" },
+  ];
+
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-accent-fg">
-        <Sparkles size={22} />
+    <div className="flex h-full flex-col items-center justify-center gap-7 px-4 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent">
+        <Logomark size={24} />
       </div>
       <div>
-        <h1 className="text-xl font-semibold">ChomuGirI mein aapka swagat hai</h1>
-        <p className="mt-1 max-w-md text-sm text-fg-muted">
+        <h1 className="font-display text-2xl font-medium">ChomuGirI mein aapka swagat hai</h1>
+        <p className="mt-2 max-w-md text-sm text-fg-muted">
           Casual baat karo to fast reply milega. Koi app, website ya script banane ko bolo to
-          poora AI swarm (Kimi K3 → GLM 5.2 → DeepSeek R1 → Nemotron Ultra) khud kaam pe lag jayega.
+          poora AI swarm khud kaam pe lag jayega.
         </p>
+      </div>
+
+      <div className="flex items-center gap-1">
+        {stages.map((s, i) => (
+          <div key={s.label} className="flex items-center gap-1">
+            <div className="flex flex-col items-center gap-1 rounded-xl border border-border bg-bg-elevated/70 px-3 py-2">
+              <span className="font-mono text-[11px] text-fg">{s.label}</span>
+              <span className="text-[10px] text-fg-muted">{s.note}</span>
+            </div>
+            {i < stages.length - 1 && <div className="h-px w-3 bg-border-strong" />}
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -52,8 +52,10 @@ export default function PipelineStatus({ events }: { events: PipelineEvent[] }) 
   const errorMsg = events.find((e) => e.type === "error")?.message;
 
   return (
-    <div className="mb-3 rounded-xl border border-border bg-bg-elevated/60 p-3">
-      {routeMsg && <p className="mb-2 text-xs text-fg-muted">{routeMsg}</p>}
+    <div className="mb-3 rounded-2xl border border-border bg-bg-elevated/60 p-3">
+      {routeMsg && (
+        <p className="mb-2 font-mono text-[11px] uppercase tracking-wide text-fg-muted">{routeMsg}</p>
+      )}
       <div className="flex flex-wrap gap-2">
         {stages.map((s) => (
           <div
@@ -61,7 +63,7 @@ export default function PipelineStatus({ events }: { events: PipelineEvent[] }) 
             className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
               s.status === "done"
                 ? "border-success/40 bg-success/10 text-success"
-                : "border-accent/50 bg-accent/10 text-accent"
+                : "stage-active border-accent/50 bg-accent/10 text-accent"
             }`}
             title={s.detail}
           >
