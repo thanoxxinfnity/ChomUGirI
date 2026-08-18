@@ -32,7 +32,7 @@ export async function chatCompletion(
   config: ProviderConfig,
   role: string,
   messages: ChatMessage[],
-  opts: { temperature?: number; jsonMode?: boolean } = {},
+  opts: { temperature?: number; jsonMode?: boolean; maxTokens?: number } = {},
 ): Promise<string> {
   assertConfigured(config, role);
 
@@ -46,6 +46,7 @@ export async function chatCompletion(
       model: config.model,
       messages,
       temperature: opts.temperature ?? 0.4,
+      max_tokens: opts.maxTokens ?? 4096,
       stream: false,
       ...(opts.jsonMode ? { response_format: { type: "json_object" } } : {}),
     }),

@@ -5,15 +5,20 @@ import "@xterm/xterm/css/xterm.css";
 import { Loader2, RotateCcw, ExternalLink } from "lucide-react";
 import type { GeneratedFile } from "@/lib/types";
 import { filesToTree, getWebContainer, hasPackageJson, pickStartScript } from "@/lib/webcontainer";
+import type { EnvVar } from "@/lib/types";
 
 type Status = "idle" | "booting" | "installing" | "running" | "error";
+
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
 /**
  * Boots a WebContainer, mounts the artifact's files, and drives everything through a single
  * interactive shell — the same process backs both the "cloud terminal" and the code runner:
  * install/start commands are typed into it automatically and the user can keep typing after.
  */
-export default function CodeRunner({ files }: { files: GeneratedFile[] }) {
+export default function CodeRunner({ files, envVars = [] }: { files: GeneratedFile[]; envVars?: EnvVar[] }) {
   const termHostRef = useRef<HTMLDivElement>(null);
   const shellInputRef = useRef<((data: string) => void) | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -94,6 +99,14 @@ export default function CodeRunner({ files }: { files: GeneratedFile[] }) {
         term.onResize(({ cols, rows }) => shell.resize({ cols, rows }));
 
         setStatus("installing");
+
+        const validEnvVars = envVars.filter((v) => v.key.trim());
+        if (validEnvVars.length > 0) {
+          const exports = validEnvVars
+            .map((v) => `export ${v.key.trim()}=${shellQuote(v.value)}`)
+            .join(" && ");
+          writer.write(`${exports}\n`);
+        }
 
         const startScript = pickStartScript(files);
         const command = hasPackageJson(files)

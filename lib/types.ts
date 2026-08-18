@@ -8,11 +8,17 @@ export interface ProviderConfig {
 
 export type ProviderSettings = Record<RoleKey, ProviderConfig>;
 
+export interface EnvVar {
+  key: string;
+  value: string;
+}
+
 export interface AppSettings {
   providers: ProviderSettings;
   vercelToken: string;
   forceCodeMode: boolean;
   maxAuditLoops: number;
+  envVars: EnvVar[];
 }
 
 export const ROLE_LABELS: Record<RoleKey, string> = {
@@ -25,37 +31,55 @@ export const ROLE_LABELS: Record<RoleKey, string> = {
 
 export const ROLE_ORDER: RoleKey[] = ["fast", "kimi", "glm", "deepseek", "nemotron"];
 
+/** Base URLs a provider preset dropdown can snap a role to in Settings. */
+export const PROVIDER_PRESETS = {
+  nim: { label: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1" },
+  openrouter: { label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
+  custom: { label: "Custom", baseUrl: "" },
+} as const;
+
+export type ProviderPresetKey = keyof typeof PROVIDER_PRESETS;
+
+/**
+ * Defaults point at NVIDIA NIM (integrate.api.nvidia.com) — one API key covers every role.
+ * Model ids below were confirmed live against the NIM catalog: z-ai/glm-5.2 and
+ * nvidia/nemotron-3-ultra-550b-a55b are exact matches for "GLM 5.2" / "Nemotron 3 Ultra 550B".
+ * NIM doesn't currently serve Kimi K3 on every account, so the coder role defaults to a strong
+ * general model instead — swap the model id here any time your account gets access to it.
+ * None of this ships with a real key baked in: every user pastes their own in Settings.
+ */
 export const DEFAULT_SETTINGS: AppSettings = {
   providers: {
     fast: {
       apiKey: "",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "google/gemini-2.0-flash-001",
+      baseUrl: PROVIDER_PRESETS.nim.baseUrl,
+      model: "meta/llama-3.1-8b-instruct",
     },
     kimi: {
       apiKey: "",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "moonshotai/kimi-k2",
+      baseUrl: PROVIDER_PRESETS.nim.baseUrl,
+      model: "meta/llama-3.3-70b-instruct",
     },
     glm: {
       apiKey: "",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "z-ai/glm-4.6",
+      baseUrl: PROVIDER_PRESETS.nim.baseUrl,
+      model: "z-ai/glm-5.2",
     },
     deepseek: {
       apiKey: "",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "deepseek/deepseek-r1",
+      baseUrl: PROVIDER_PRESETS.nim.baseUrl,
+      model: "deepseek-ai/deepseek-v4-flash-0731",
     },
     nemotron: {
       apiKey: "",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "nvidia/llama-3.1-nemotron-70b-instruct",
+      baseUrl: PROVIDER_PRESETS.nim.baseUrl,
+      model: "nvidia/nemotron-3-ultra-550b-a55b",
     },
   },
   vercelToken: "",
   forceCodeMode: false,
   maxAuditLoops: 3,
+  envVars: [],
 };
 
 export interface ChatMessage {

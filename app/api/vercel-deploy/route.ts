@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import type { GeneratedFile } from "@/lib/types";
+import type { EnvVar, GeneratedFile } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -8,6 +8,7 @@ interface DeployRequestBody {
   projectName: string;
   files: GeneratedFile[];
   teamId?: string;
+  envVars?: EnvVar[];
 }
 
 /**
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { vercelToken, projectName, files, teamId } = body;
+  const { vercelToken, projectName, files, teamId, envVars } = body;
 
   if (!vercelToken) {
     return Response.json({ error: "Vercel token settings me set nahi hai." }, { status: 400 });
@@ -41,6 +42,10 @@ export async function POST(req: NextRequest) {
   const url = new URL("https://api.vercel.com/v13/deployments");
   if (teamId) url.searchParams.set("teamId", teamId);
 
+  const envObject = Object.fromEntries(
+    (envVars ?? []).filter((v) => v.key.trim()).map((v) => [v.key.trim(), v.value]),
+  );
+
   const res = await fetch(url.toString(), {
     method: "POST",
     headers: {
@@ -52,6 +57,7 @@ export async function POST(req: NextRequest) {
       target: "production",
       files: files.map((f) => ({ file: f.path, data: f.content })),
       projectSettings: { framework: null },
+      ...(Object.keys(envObject).length > 0 ? { env: envObject, build: { env: envObject } } : {}),
     }),
   });
 

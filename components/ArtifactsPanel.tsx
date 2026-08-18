@@ -13,6 +13,7 @@ export default function ArtifactsPanel() {
   const artifact = useAppStore((s) => (activeArtifactId ? s.artifacts[activeArtifactId] : undefined));
   const setActiveArtifactId = useAppStore((s) => s.setActiveArtifactId);
   const vercelToken = useAppStore((s) => s.settings.vercelToken);
+  const envVars = useAppStore((s) => s.settings.envVars);
 
   const [tab, setTab] = useState<Tab>("code");
   const [activeFile, setActiveFile] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function ArtifactsPanel() {
           vercelToken,
           projectName: artifact.title,
           files: artifact.files,
+          envVars: envVars.filter((v) => v.key.trim()),
         }),
       });
       const data = await res.json();
@@ -164,7 +166,7 @@ export default function ArtifactsPanel() {
             </div>
           </div>
         ) : (
-          <CodeRunner files={artifact.files} />
+          <CodeRunner files={artifact.files} envVars={envVars} />
         )}
       </div>
     </div>

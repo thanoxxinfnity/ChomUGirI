@@ -39,10 +39,15 @@ export async function* runPipeline(
 
   try {
     yield { type: "stage", stage: "kimi", status: "start", message: "Kimi K3 code likh raha hai..." };
-    const kimiOut = await chatCompletion(providers.kimi, "Kimi K3", [
-      { role: "system", content: KIMI_SYSTEM_PROMPT },
-      { role: "user", content: prompt },
-    ]);
+    const kimiOut = await chatCompletion(
+      providers.kimi,
+      "Kimi K3",
+      [
+        { role: "system", content: KIMI_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      { maxTokens: 8192 },
+    );
     files = parseFileBlocks(kimiOut);
     if (files.length === 0) {
       throw new ProviderError(
@@ -105,15 +110,20 @@ export async function* runPipeline(
         iteration: i,
         message: `Kimi K3 issues fix kar raha hai (round ${i})...`,
       };
-      const fixOut = await chatCompletion(providers.kimi, "Kimi K3", [
-        { role: "system", content: KIMI_FIX_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Current files:\n${filesToPromptBlock(files)}\n\nIssues to fix:\n${lastIssues
-            .map((iss) => `- [${iss.file}] ${iss.description}`)
-            .join("\n")}`,
-        },
-      ]);
+      const fixOut = await chatCompletion(
+        providers.kimi,
+        "Kimi K3",
+        [
+          { role: "system", content: KIMI_FIX_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `Current files:\n${filesToPromptBlock(files)}\n\nIssues to fix:\n${lastIssues
+              .map((iss) => `- [${iss.file}] ${iss.description}`)
+              .join("\n")}`,
+          },
+        ],
+        { maxTokens: 8192 },
+      );
       const fixed = parseFileBlocks(fixOut);
       if (fixed.length > 0) {
         files = mergeFiles(files, fixed);
@@ -141,7 +151,7 @@ export async function* runPipeline(
               .join("\n")}`,
           },
         ],
-        { temperature: 0.2 },
+        { temperature: 0.2, maxTokens: 8192 },
       );
       const deepFixed = parseFileBlocks(deepOut);
       if (deepFixed.length > 0) {
@@ -187,7 +197,7 @@ export async function* runPipeline(
         { role: "system", content: NEMOTRON_SYSTEM_PROMPT },
         { role: "user", content: filesToPromptBlock(files) },
       ],
-      { jsonMode: true, temperature: 0.1 },
+      { jsonMode: true, temperature: 0.1, maxTokens: 8192 },
     );
     const safety = extractJson<NemotronResult>(nemotronOut);
     if (safety?.fixedFiles?.length) {

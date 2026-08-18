@@ -1,19 +1,53 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff, Save, Terminal, Rocket, LayoutPanelLeft } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Save,
+  Terminal,
+  Rocket,
+  LayoutPanelLeft,
+  Zap,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { useAppStore } from "@/lib/store";
-import { ROLE_LABELS, ROLE_ORDER } from "@/lib/types";
-import type { RoleKey } from "@/lib/types";
+import { PROVIDER_PRESETS, ROLE_LABELS, ROLE_ORDER } from "@/lib/types";
+import type { ProviderPresetKey, RoleKey } from "@/lib/types";
+
+function presetForBaseUrl(baseUrl: string): ProviderPresetKey {
+  const entry = (Object.entries(PROVIDER_PRESETS) as [ProviderPresetKey, { baseUrl: string }][]).find(
+    ([key, v]) => key !== "custom" && v.baseUrl === baseUrl,
+  );
+  return entry ? entry[0] : "custom";
+}
 
 function ProviderRow({ role }: { role: RoleKey }) {
   const config = useAppStore((s) => s.settings.providers[role]);
   const setProviderConfig = useAppStore((s) => s.setProviderConfig);
   const [showKey, setShowKey] = useState(false);
+  const preset = presetForBaseUrl(config.baseUrl);
 
   return (
     <div className="rounded-xl border border-border bg-bg-elevated p-4">
-      <p className="mb-3 text-sm font-medium">{ROLE_LABELS[role]}</p>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-medium">{ROLE_LABELS[role]}</p>
+        <select
+          value={preset}
+          onChange={(e) => {
+            const key = e.target.value as ProviderPresetKey;
+            if (key !== "custom") setProviderConfig(role, { baseUrl: PROVIDER_PRESETS[key].baseUrl });
+          }}
+          className="rounded-md border border-border bg-bg px-2 py-1 text-xs text-fg-muted outline-none focus:border-accent"
+        >
+          {Object.entries(PROVIDER_PRESETS).map(([key, v]) => (
+            <option key={key} value={key}>
+              {v.label}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className="mb-1 block text-xs text-fg-muted">API Key</label>
@@ -22,7 +56,7 @@ function ProviderRow({ role }: { role: RoleKey }) {
               type={showKey ? "text" : "password"}
               value={config.apiKey}
               onChange={(e) => setProviderConfig(role, { apiKey: e.target.value })}
-              placeholder="sk-..."
+              placeholder="apna API key yahan daalo..."
               className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
             />
             <button
@@ -39,7 +73,7 @@ function ProviderRow({ role }: { role: RoleKey }) {
           <input
             value={config.baseUrl}
             onChange={(e) => setProviderConfig(role, { baseUrl: e.target.value })}
-            placeholder="https://openrouter.ai/api/v1"
+            placeholder="https://integrate.api.nvidia.com/v1"
             className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </div>
@@ -53,6 +87,110 @@ function ProviderRow({ role }: { role: RoleKey }) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function QuickFillNim() {
+  const setProviderConfig = useAppStore((s) => s.setProviderConfig);
+  const [key, setKey] = useState("");
+
+  function apply() {
+    if (!key.trim()) return;
+    for (const role of ROLE_ORDER) {
+      setProviderConfig(role, { apiKey: key.trim(), baseUrl: PROVIDER_PRESETS.nim.baseUrl });
+    }
+    setKey("");
+  }
+
+  return (
+    <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
+      <p className="flex items-center gap-1.5 text-sm font-medium text-accent">
+        <Zap size={14} /> Fast setup: ek NVIDIA NIM key se saare 5 roles
+      </p>
+      <p className="mt-1 text-xs text-fg-muted">
+        NIM catalog me GLM 5.2 aur Nemotron 3 Ultra 550B literally exact models hain, aur baaki
+        roles ke liye bhi achhe defaults already daale hain. Apna NIM key ek baar daalo, sab
+        providers apply ho jayenge (model id har row me alag se edit kar sakte ho).
+      </p>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="password"
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="nvapi-..."
+          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+        />
+        <button
+          type="button"
+          onClick={apply}
+          className="shrink-0 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-fg hover:bg-accent-hover"
+        >
+          Apply to all
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EnvVarsSection() {
+  const envVars = useAppStore((s) => s.settings.envVars);
+  const addEnvVar = useAppStore((s) => s.addEnvVar);
+  const updateEnvVar = useAppStore((s) => s.updateEnvVar);
+  const removeEnvVar = useAppStore((s) => s.removeEnvVar);
+  const [showValues, setShowValues] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-border bg-bg-elevated p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs text-fg-muted">
+          Replit &quot;Secrets&quot; jaisa — ye variables generated project ke cloud terminal
+          shell me (aur Vercel deploy me) automatically inject hote hain.
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowValues((v) => !v)}
+          className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-fg-muted hover:text-fg"
+        >
+          {showValues ? <EyeOff size={12} /> : <Eye size={12} />}
+          {showValues ? "Hide values" : "Show values"}
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {envVars.map((v, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              value={v.key}
+              onChange={(e) => updateEnvVar(i, { key: e.target.value })}
+              placeholder="KEY"
+              className="w-2/5 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
+            />
+            <input
+              type={showValues ? "text" : "password"}
+              value={v.value}
+              onChange={(e) => updateEnvVar(i, { value: e.target.value })}
+              placeholder="value"
+              className="flex-1 rounded-lg border border-border bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={() => removeEnvVar(i)}
+              className="shrink-0 rounded-lg border border-border p-2 text-fg-muted hover:border-danger/50 hover:text-danger"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={addEnvVar}
+        className="mt-3 flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-fg-muted hover:text-fg"
+      >
+        <Plus size={13} /> Add variable
+      </button>
     </div>
   );
 }
@@ -75,6 +213,7 @@ export default function SettingsForm() {
 
       <section className="mt-6 space-y-3">
         <h2 className="text-sm font-semibold text-fg-muted">AI Router / Swarm Models</h2>
+        <QuickFillNim />
         {ROLE_ORDER.map((role) => (
           <ProviderRow key={role} role={role} />
         ))}
@@ -118,7 +257,8 @@ export default function SettingsForm() {
           </div>
           <p className="mt-2 text-xs text-fg-muted">
             Artifact panel ke &quot;Deploy&quot; button se seedha Vercel pe production deployment
-            ban jayega. Token{" "}
+            ban jayega, environment variables (neeche wale) bhi deployment ke saath chale jayenge.
+            Token{" "}
             <a
               className="text-accent underline"
               href="https://vercel.com/account/tokens"
@@ -133,6 +273,11 @@ export default function SettingsForm() {
       </section>
 
       <section className="mt-8 space-y-3">
+        <h2 className="text-sm font-semibold text-fg-muted">Environment Variables (Secrets)</h2>
+        <EnvVarsSection />
+      </section>
+
+      <section className="mt-8 space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-fg-muted">
           <Terminal size={14} /> Cloud Terminal &amp; Code Runner
         </h2>
@@ -144,7 +289,14 @@ export default function SettingsForm() {
             <code className="mx-1 rounded bg-bg-elevated-2 px-1.5 py-0.5">npm install</code> /
             <code className="mx-1 rounded bg-bg-elevated-2 px-1.5 py-0.5">npm run dev</code> khud
             chal jaata hai aur live preview mil jaati hai — download kiye bina. Terminal fully
-            interactive hai, tum khud bhi commands type kar sakte ho.
+            interactive hai, tum khud bhi commands type kar sakte ho, aur upar wale environment
+            variables shell me pehle se export ho chuke hote hain.
+          </p>
+          <p className="mt-2 text-xs">
+            Note: ye ek browser-sandboxed Node.js runtime hai (WebContainers) — web apps, APIs,
+            scripts sab chalte hain, lekin native/compiled toolchains (jaise Android SDK/Gradle)
+            iske andar nahi chal sakte, kyunki wo real Linux binaries mangte hain jo browser
+            sandbox provide nahi karta.
           </p>
         </div>
       </section>
