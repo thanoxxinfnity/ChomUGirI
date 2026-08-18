@@ -22,76 +22,48 @@ function assertConfigured(config: ProviderConfig, role: string) {
   }
 }
 
-/**
- * Generic OpenAI-compatible chat client. Works against any endpoint that speaks
- * the /chat/completions protocol (OpenRouter, Groq, Together, vLLM, Ollama proxy, etc.)
- * so the exact vendor slug behind "Kimi K3" / "GLM 5.2" / "Nemotron 3 Ultra" can be
- * swapped per-user in Settings without code changes.
- */
-export async function chatCompletion(
-  config: ProviderConfig,
-  role: string,
-  messages: ChatMessage[],
-  opts: { temperature?: number; jsonMode?: boolean; maxTokens?: number } = {},
-): Promise<string> {
-  assertConfigured(config, role);
-
-  const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature: opts.temperature ?? 0.4,
-      max_tokens: opts.maxTokens ?? 4096,
-      stream: false,
-      ...(opts.jsonMode ? { response_format: { type: "json_object" } } : {}),
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new ProviderError(
-      `${role} request fail hui (${res.status}): ${text.slice(0, 300)}`,
-      role,
-    );
-  }
-
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content !== "string") {
-    throw new ProviderError(`${role} ne khali response diya.`, role);
-  }
-  return content;
+interface StreamOpts {
+  temperature?: number;
+  jsonMode?: boolean;
+  maxTokens?: number;
 }
 
 /**
- * Streaming variant for the fast chat path. Yields incremental text chunks.
+ * Raw SSE delta stream from an OpenAI-compatible /chat/completions endpoint. Always requested
+ * with stream:true — even for calls whose caller wants one final string (see chatCompletion
+ * below) — because a slow model's non-streaming response can sit fully idle for minutes with
+ * zero bytes on the wire, and some proxies/CDNs kill idle connections long before the model
+ * finishes. Streaming keeps bytes flowing the whole time instead.
  */
-export async function* streamChatCompletion(
+async function* rawStream(
   config: ProviderConfig,
   role: string,
   messages: ChatMessage[],
-  opts: { temperature?: number } = {},
+  opts: StreamOpts,
 ): AsyncGenerator<string> {
   assertConfigured(config, role);
 
-  const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-      temperature: opts.temperature ?? 0.6,
-      stream: true,
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature: opts.temperature ?? 0.4,
+        max_tokens: opts.maxTokens ?? 4096,
+        stream: true,
+        ...(opts.jsonMode ? { response_format: { type: "json_object" } } : {}),
+      }),
+    });
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    throw new ProviderError(`${role} tak network request nahi pahunch payi: ${cause}`, role);
+  }
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
@@ -129,4 +101,37 @@ export async function* streamChatCompletion(
       }
     }
   }
+}
+
+/**
+ * Generic OpenAI-compatible chat client. Works against any endpoint that speaks
+ * the /chat/completions protocol (OpenRouter, Groq, Together, NVIDIA NIM, vLLM, Ollama
+ * proxy, etc.) so the exact vendor slug behind "Kimi K3" / "GLM 5.2" / "Nemotron 3 Ultra"
+ * can be swapped per-user in Settings without code changes. Streams under the hood (see
+ * rawStream) and joins the deltas into one string for callers that just want the full text.
+ */
+export async function chatCompletion(
+  config: ProviderConfig,
+  role: string,
+  messages: ChatMessage[],
+  opts: StreamOpts = {},
+): Promise<string> {
+  let full = "";
+  for await (const chunk of rawStream(config, role, messages, opts)) {
+    full += chunk;
+  }
+  if (!full) {
+    throw new ProviderError(`${role} ne khali response diya.`, role);
+  }
+  return full;
+}
+
+/** Streaming variant for the fast chat path. Yields incremental text chunks as they arrive. */
+export async function* streamChatCompletion(
+  config: ProviderConfig,
+  role: string,
+  messages: ChatMessage[],
+  opts: { temperature?: number } = {},
+): AsyncGenerator<string> {
+  yield* rawStream(config, role, messages, { temperature: opts.temperature ?? 0.6 });
 }
