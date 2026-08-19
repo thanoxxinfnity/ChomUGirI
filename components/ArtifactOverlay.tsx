@@ -12,8 +12,11 @@ export default function ArtifactOverlay() {
   if (!activeArtifactId) return null;
 
   if (canvasMode) {
+    // Stop short of the always-visible desktop sidebar (md:w-64) — it sits in a higher
+    // stacking context (a flex item with z-50) and would otherwise intercept clicks/hide
+    // content in that strip even though this overlay visually paints underneath it.
     return (
-      <div className="fixed inset-0 z-40 bg-bg">
+      <div className="fixed inset-y-0 left-0 right-0 z-40 bg-bg md:left-64">
         <ArtifactsPanel />
       </div>
     );
