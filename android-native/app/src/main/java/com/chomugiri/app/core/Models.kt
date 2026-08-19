@@ -32,11 +32,16 @@ const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 data class AppSettings(
     val providers: Map<String, ProviderConfig> = defaultProviders(),
     val maxAuditLoops: Int = 2,
-    /** A terminal the user hosts and exposes themselves (ttyd behind their own tunnel). */
+    /**
+     * ttyd behind a tunnel — the user's own, entered by them in Settings. Never pre-filled: a
+     * value baked into a shared build would hand every installer a shell on that one machine.
+     */
     val terminalUrl: String = "",
     val terminalAuthToken: String = "",
-    /** Lets the AI agent run commands on that terminal, not just the user. */
+    /** Lets the AI agent run commands on that terminal, not just the user. Off until set up. */
     val agentTerminalEnabled: Boolean = false,
+    /** Once a URL is set, connect on launch and keep retrying instead of requiring a tap. */
+    val autoConnectTerminal: Boolean = true,
     /** Web search for Deep Research. Without this, Deep Research stays off — see SearchClient. */
     val searchProvider: String = "tavily",
     val searchApiKey: String = "",

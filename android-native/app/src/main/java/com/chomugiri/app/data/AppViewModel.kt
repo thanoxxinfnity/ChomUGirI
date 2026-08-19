@@ -7,6 +7,7 @@ import com.chomugiri.app.core.*
 import com.chomugiri.app.net.LlmClient
 import com.chomugiri.app.net.TerminalClient
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,13 +44,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val agentRunning: StateFlow<Boolean> = _agentRunning.asStateFlow()
 
     private var currentJob: Job? = null
+    private var autoConnectJob: Job? = null
     private var loaded = false
 
     init {
         viewModelScope.launch {
             store.settings.collect { s ->
                 _settings.value = s
-                if (!loaded) loaded = true
+                if (!loaded) {
+                    loaded = true
+                    if (s.autoConnectTerminal && s.terminalUrl.isNotBlank()) startAutoConnect()
+                }
             }
         }
         viewModelScope.launch {
@@ -275,6 +280,28 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val s = _settings.value
         TerminalClient.connect(s.terminalUrl, s.terminalAuthToken)
     }
+
+    /**
+     * Connects on launch and keeps retrying with a backoff, because the usual reason this fails
+     * is a tunnel that simply hasn't been started yet — worth picking up on its own once it is.
+     */
+    private fun startAutoConnect() {
+        if (autoConnectJob?.isActive == true) return
+        autoConnectJob = viewModelScope.launch {
+            var delayMs = 4_000L
+            repeat(20) {
+                if (TerminalClient.connected.value) return@launch
+                val s = _settings.value
+                if (!s.autoConnectTerminal || s.terminalUrl.isBlank()) return@launch
+                TerminalClient.connect(s.terminalUrl, s.terminalAuthToken)
+                delay(delayMs)
+                if (TerminalClient.connected.value) return@launch
+                delayMs = (delayMs * 2).coerceAtMost(60_000L)
+            }
+        }
+    }
+
+    fun retryTerminal() = startAutoConnect()
 
     fun disconnectTerminal() = TerminalClient.disconnect()
 

@@ -90,8 +90,9 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
 
             Section("My Terminal") {
                 Text(
-                    "Run ttyd on your own machine and expose it with your own tunnel. ChomuGirI " +
-                        "never creates, hosts, or hardcodes a tunnel — this URL is entirely yours.",
+                    "Run ttyd on your own machine and expose it with your own tunnel. This URL " +
+                        "is never pre-filled or shared — everyone who installs this app enters " +
+                        "their own, because whoever holds a URL gets a real shell on that machine.",
                     style = MaterialTheme.typography.bodySmall,
                     color = FgMuted,
                 )
@@ -102,6 +103,23 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Field("ttyd auth token (optional)", settings.terminalAuthToken, secret = true) { v ->
                     vm.updateSettings { it.copy(terminalAuthToken = v) }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = settings.autoConnectTerminal,
+                        onCheckedChange = { on -> vm.updateSettings { it.copy(autoConnectTerminal = on) } },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Accent),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Connect automatically", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Connects at startup and keeps retrying if the tunnel is down.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FgMuted,
+                        )
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {

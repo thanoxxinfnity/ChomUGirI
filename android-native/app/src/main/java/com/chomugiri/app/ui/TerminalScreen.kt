@@ -62,7 +62,7 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                 Text(
                     "Run ttyd on your own machine and expose it with your own tunnel " +
                         "(ngrok, Cloudflare — whatever you use), then paste that URL in Settings. " +
-                        "ChomuGirI never creates or hosts a tunnel for you.",
+                        "This is always your own — ChomuGirI never ships or shares a tunnel URL.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = FgMuted,
                 )
@@ -145,12 +145,22 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             Spacer(Modifier.height(8.dp))
 
             Button(
-                onClick = { if (connected) vm.disconnectTerminal() else vm.connectTerminal() },
+                onClick = { if (connected) vm.disconnectTerminal() else vm.retryTerminal() },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (connected) BgElevated2 else Accent,
                 ),
-            ) { Text(if (connected) "Disconnect" else "Connect") }
+            ) { Text(if (connected) "Disconnect" else "Reconnect") }
+
+            if (!connected) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Connects on its own at startup and keeps retrying. If it stays down, the " +
+                        "tunnel or ttyd probably isn't running.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FgMuted,
+                )
+            }
         }
     }
 }
