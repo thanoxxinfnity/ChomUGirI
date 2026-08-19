@@ -216,6 +216,11 @@ function CloudTerminalSection() {
         real, fully interactive &quot;My Terminal&quot; tab on every artifact — useful for things
         the in-browser sandbox can&apos;t do, like a real Android SDK / Flutter build. Leave it
         empty to only use the built-in sandbox.
+        <br />
+        <span className="text-fg-muted/80">
+          Using the ChomuGirI Android app? It has its own separate storage from any browser —
+          set this URL again from inside the app itself, it won&apos;t carry over automatically.
+        </span>
       </p>
     </div>
   );
