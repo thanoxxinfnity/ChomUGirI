@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { v4 as uuidv4 } from "uuid";
+import { KeyRound } from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import { readSseStream } from "@/lib/sse-client";
 import type { ChatMessage, ConversationMessage } from "@/lib/types";
@@ -137,7 +139,7 @@ export default function ChatView() {
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {messages.length === 0 ? (
-          <EmptyState />
+          <EmptyState hasApiKey={Boolean(settings.providers.fast.apiKey)} />
         ) : (
           <div key={activeConversationId} className="mx-auto flex max-w-3xl flex-col gap-6 px-3 py-6 sm:px-4 sm:py-8">
             {messages.map((m) => (
@@ -163,7 +165,7 @@ function summarize(fileCount: number) {
     : "Done. Open the panel to view, run, or download.";
 }
 
-function EmptyState() {
+function EmptyState({ hasApiKey }: { hasApiKey: boolean }) {
   const stages = [
     { label: "Fast Chat", note: "casual talk" },
     { label: "Kimi K3", note: "coder" },
@@ -181,9 +183,20 @@ function EmptyState() {
         <h1 className="font-display text-xl font-medium sm:text-2xl">Welcome to ChomuGirI</h1>
         <p className="mt-2 max-w-md text-sm text-fg-muted">
           Casual conversation gets a fast reply. Ask for an app, website, or script and the full
-          AI swarm takes over automatically.
+          AI swarm takes over automatically — that&apos;s when the Code, Canvas, Run, Android APK
+          and My Terminal tools show up, on the generated project itself.
         </p>
       </div>
+
+      {!hasApiKey && (
+        <Link
+          href="/settings"
+          className="flex items-center gap-2 rounded-xl border border-accent-2/40 bg-accent-2/10 px-4 py-2.5 text-sm text-accent-2 hover:bg-accent-2/20"
+        >
+          <KeyRound size={15} />
+          No API key set yet — add one in Settings to get started
+        </Link>
+      )}
 
       <div className="flex flex-wrap items-center justify-center gap-1">
         {stages.map((s, i) => (
