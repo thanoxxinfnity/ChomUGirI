@@ -74,7 +74,6 @@ export default function ChatView() {
           history,
           providers: settings.providers,
           maxAuditLoops: settings.maxAuditLoops,
-          forceCodeMode: settings.forceCodeMode,
         }),
       });
 

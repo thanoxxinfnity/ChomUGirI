@@ -19,7 +19,6 @@ interface AppState {
   setProviderConfig: (role: RoleKey, patch: Partial<ProviderConfig>) => void;
   setVercelToken: (token: string) => void;
   setCloudTerminalUrl: (url: string) => void;
-  setForceCodeMode: (v: boolean) => void;
   setMaxAuditLoops: (n: number) => void;
   setEnvVars: (vars: EnvVar[]) => void;
   addEnvVar: () => void;
@@ -71,8 +70,6 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ settings: { ...s.settings, vercelToken: token } })),
       setCloudTerminalUrl: (url) =>
         set((s) => ({ settings: { ...s.settings, cloudTerminalUrl: url } })),
-      setForceCodeMode: (v) =>
-        set((s) => ({ settings: { ...s.settings, forceCodeMode: v } })),
       setMaxAuditLoops: (n) =>
         set((s) => ({ settings: { ...s.settings, maxAuditLoops: n } })),
       setEnvVars: (vars) => set((s) => ({ settings: { ...s.settings, envVars: vars } })),

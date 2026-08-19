@@ -13,7 +13,6 @@ interface RouterRequestBody {
   history?: ChatMessage[];
   providers: ProviderSettings;
   maxAuditLoops?: number;
-  forceCodeMode?: boolean;
 }
 
 async function* chatGenerator(
@@ -39,7 +38,7 @@ async function* chatGenerator(
 }
 
 async function* routedGenerator(body: RouterRequestBody): AsyncGenerator<PipelineEvent> {
-  const mode = body.forceCodeMode || classifyIntent(body.prompt) === "pipeline" ? "pipeline" : "chat";
+  const mode = classifyIntent(body.prompt);
 
   if (mode === "chat") {
     yield* chatGenerator(body.prompt, body.history ?? [], body.providers);

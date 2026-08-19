@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
-import { ArrowUp, Code2 } from "lucide-react";
-import { useAppStore } from "@/lib/store";
+import { ArrowUp } from "lucide-react";
 
 export default function Composer({
   onSend,
@@ -12,8 +11,6 @@ export default function Composer({
   disabled?: boolean;
 }) {
   const [value, setValue] = useState("");
-  const forceCodeMode = useAppStore((s) => s.settings.forceCodeMode);
-  const setForceCodeMode = useAppStore((s) => s.setForceCodeMode);
 
   function submit() {
     const text = value.trim();
@@ -46,21 +43,7 @@ export default function Composer({
             el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
           }}
         />
-        <div className="flex items-center justify-between px-1 pb-1 pt-1">
-          <button
-            type="button"
-            onClick={() => setForceCodeMode(!forceCodeMode)}
-            title="Force the coding pipeline (Kimi/GLM/DeepSeek/Nemotron) even for a casual-sounding message"
-            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-              forceCodeMode
-                ? "border-accent-2/50 bg-accent-2/15 text-accent-2"
-                : "border-border text-fg-muted hover:text-fg"
-            }`}
-          >
-            <Code2 size={13} />
-            Code mode {forceCodeMode ? "ON" : "OFF"}
-          </button>
-
+        <div className="flex items-center justify-end px-1 pb-1 pt-1">
           <button
             type="button"
             onClick={submit}
@@ -72,7 +55,7 @@ export default function Composer({
         </div>
       </div>
       <p className="mt-2 hidden text-center text-xs text-fg-muted sm:block">
-        Casual chat gets a fast reply. App/code requests wake the full swarm (Kimi → GLM → DeepSeek → Nemotron).
+        Casual chat gets a fast reply. App/code requests wake the full swarm (Kimi → GLM → DeepSeek → Nemotron) — automatically.
       </p>
     </div>
   );

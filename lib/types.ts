@@ -16,7 +16,6 @@ export interface EnvVar {
 export interface AppSettings {
   providers: ProviderSettings;
   vercelToken: string;
-  forceCodeMode: boolean;
   maxAuditLoops: number;
   envVars: EnvVar[];
   /** URL of a terminal the user hosts and exposes themselves (e.g. ttyd behind their own
@@ -80,7 +79,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     },
   },
   vercelToken: "",
-  forceCodeMode: false,
   maxAuditLoops: 3,
   envVars: [],
   cloudTerminalUrl: "",
