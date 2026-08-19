@@ -2,16 +2,31 @@
 
 import { useMemo, useState } from "react";
 import JSZip from "jszip";
-import { Download, Rocket, X, Code, PlayCircle, Loader2, CheckCircle2, TerminalSquare } from "lucide-react";
+import {
+  Download,
+  Rocket,
+  X,
+  Code,
+  PlayCircle,
+  Loader2,
+  CheckCircle2,
+  TerminalSquare,
+  Smartphone,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
 import { useAppStore } from "@/lib/store";
 import CodeRunner from "./CodeRunner";
+import AndroidApkTab from "./AndroidApkTab";
 
-type Tab = "code" | "run" | "terminal";
+type Tab = "code" | "run" | "apk" | "terminal";
 
 export default function ArtifactsPanel() {
   const activeArtifactId = useAppStore((s) => s.activeArtifactId);
   const artifact = useAppStore((s) => (activeArtifactId ? s.artifacts[activeArtifactId] : undefined));
   const setActiveArtifactId = useAppStore((s) => s.setActiveArtifactId);
+  const canvasMode = useAppStore((s) => s.canvasMode);
+  const setCanvasMode = useAppStore((s) => s.setCanvasMode);
   const vercelToken = useAppStore((s) => s.settings.vercelToken);
   const envVars = useAppStore((s) => s.settings.envVars);
   const cloudTerminalUrl = useAppStore((s) => s.settings.cloudTerminalUrl);
@@ -81,6 +96,18 @@ export default function ArtifactsPanel() {
         </div>
         <div className="flex items-center gap-1.5">
           <button
+            onClick={() => setCanvasMode(!canvasMode)}
+            title={canvasMode ? "Exit Canvas" : "Canvas (full screen)"}
+            className={`hidden items-center gap-1 rounded-md border px-2 py-1.5 text-xs sm:flex ${
+              canvasMode
+                ? "border-accent/50 bg-accent/10 text-accent"
+                : "border-border text-fg-muted hover:text-fg"
+            }`}
+          >
+            {canvasMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            Canvas
+          </button>
+          <button
             onClick={downloadZip}
             title="Download as zip"
             className="flex items-center gap-1 rounded-md border border-border px-2 py-1.5 text-xs text-fg-muted hover:text-fg"
@@ -122,10 +149,10 @@ export default function ArtifactsPanel() {
         </div>
       )}
 
-      <div className="flex border-b border-border px-2">
+      <div className="flex overflow-x-auto border-b border-border px-2">
         <button
           onClick={() => setTab("code")}
-          className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
+          className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
             tab === "code" ? "border-accent text-fg" : "border-transparent text-fg-muted"
           }`}
         >
@@ -133,22 +160,28 @@ export default function ArtifactsPanel() {
         </button>
         <button
           onClick={() => setTab("run")}
-          className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
+          className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
             tab === "run" ? "border-accent text-fg" : "border-transparent text-fg-muted"
           }`}
         >
-          <PlayCircle size={13} />
-          <span className="hidden sm:inline">Run &amp; Terminal</span>
-          <span className="sm:hidden">Run</span>
+          <PlayCircle size={13} /> Run
+        </button>
+        <button
+          onClick={() => setTab("apk")}
+          className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
+            tab === "apk" ? "border-accent text-fg" : "border-transparent text-fg-muted"
+          }`}
+        >
+          <Smartphone size={13} /> Android APK
         </button>
         {cloudTerminalUrl && (
           <button
             onClick={() => setTab("terminal")}
-            className={`flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
+            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs ${
               tab === "terminal" ? "border-accent text-fg" : "border-transparent text-fg-muted"
             }`}
           >
-            <TerminalSquare size={13} /> <span className="hidden sm:inline">My Terminal</span>
+            <TerminalSquare size={13} /> My Terminal
           </button>
         )}
       </div>
@@ -180,6 +213,10 @@ export default function ArtifactsPanel() {
           </div>
         ) : tab === "run" ? (
           <CodeRunner files={artifact.files} envVars={envVars} />
+        ) : tab === "apk" ? (
+          <div className="h-full overflow-y-auto">
+            <AndroidApkTab artifact={artifact} />
+          </div>
         ) : (
           <iframe
             src={cloudTerminalUrl}

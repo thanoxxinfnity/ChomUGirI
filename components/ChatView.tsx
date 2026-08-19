@@ -22,6 +22,7 @@ export default function ChatView() {
   const updateMessage = useAppStore((s) => s.updateMessage);
   const upsertArtifact = useAppStore((s) => s.upsertArtifact);
   const setActiveArtifactId = useAppStore((s) => s.setActiveArtifactId);
+  const renameConversation = useAppStore((s) => s.renameConversation);
   const settings = useAppStore((s) => s.settings);
 
   const [busy, setBusy] = useState(false);
@@ -100,14 +101,17 @@ export default function ChatView() {
           const existingArtifactId = currentAssistantMessage()?.artifactId;
           const artifactId = artifactCreated && existingArtifactId ? existingArtifactId : uuidv4();
           artifactCreated = true;
+          const projectTitle = guessTitle(text);
           upsertArtifact({
             id: artifactId,
-            title: guessTitle(text),
+            title: projectTitle,
             files: ev.files,
             createdAt: Date.now(),
           });
           updateMessage(assistantId, { artifactId, content: summarize(ev.files.length) });
           setActiveArtifactId(artifactId);
+          const convoId = useAppStore.getState().activeConversationId;
+          if (convoId) renameConversation(convoId, projectTitle);
         } else if (ev.type === "done") {
           const current = currentAssistantMessage();
           updateMessage(assistantId, {

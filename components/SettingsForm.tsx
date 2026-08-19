@@ -331,9 +331,11 @@ export default function SettingsForm() {
           <LayoutPanelLeft size={14} /> Canvas &amp; Artifacts
         </h2>
         <div className="rounded-xl border border-border bg-bg-elevated p-3.5 text-sm text-fg-muted sm:p-4">
-          Generated code always opens in the artifact panel — code view, live run/preview,
-          download-as-zip, and deploy all live there. Past artifacts stay saved with the
-          conversation history in localStorage.
+          Generated code opens in the artifact panel — Code view, Run (live preview/sandbox),
+          Android APK, and (when a terminal URL is set) My Terminal all live there, plus a
+          &quot;Canvas&quot; button to expand the whole thing edge-to-edge on desktop. Every
+          artifact you&apos;ve ever generated is also browsable from the{" "}
+          <strong className="text-fg">Artifacts</strong> page in the sidebar.
         </div>
       </section>
 

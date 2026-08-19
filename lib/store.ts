@@ -31,6 +31,7 @@ interface AppState {
   startNewConversation: () => string;
   setActiveConversationId: (id: string) => void;
   deleteConversation: (id: string) => void;
+  renameConversation: (id: string, title: string) => void;
   addMessage: (m: ConversationMessage) => void;
   updateMessage: (id: string, patch: Partial<ConversationMessage>) => void;
 
@@ -38,6 +39,8 @@ interface AppState {
   upsertArtifact: (a: Artifact) => void;
   activeArtifactId: string | null;
   setActiveArtifactId: (id: string | null) => void;
+  canvasMode: boolean;
+  setCanvasMode: (v: boolean) => void;
 
   mobileSidebarOpen: boolean;
   setMobileSidebarOpen: (v: boolean) => void;
@@ -114,6 +117,12 @@ export const useAppStore = create<AppState>()(
           const activeConversationId = s.activeConversationId === id ? null : s.activeConversationId;
           return { conversations, activeConversationId };
         }),
+      renameConversation: (id, title) =>
+        set((s) => {
+          const convo = s.conversations[id];
+          if (!convo) return s;
+          return { conversations: { ...s.conversations, [id]: { ...convo, title } } };
+        }),
       addMessage: (m) => {
         let id = get().activeConversationId;
         if (!id || !get().conversations[id]) id = get().startNewConversation();
@@ -153,7 +162,9 @@ export const useAppStore = create<AppState>()(
       upsertArtifact: (a) =>
         set((s) => ({ artifacts: { ...s.artifacts, [a.id]: a } })),
       activeArtifactId: null,
-      setActiveArtifactId: (id) => set({ activeArtifactId: id, mobileSidebarOpen: false }),
+      setActiveArtifactId: (id) => set({ activeArtifactId: id, mobileSidebarOpen: false, canvasMode: false }),
+      canvasMode: false,
+      setCanvasMode: (v) => set({ canvasMode: v }),
 
       mobileSidebarOpen: false,
       setMobileSidebarOpen: (v) => set({ mobileSidebarOpen: v }),
