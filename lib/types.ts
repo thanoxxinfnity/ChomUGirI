@@ -79,7 +79,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     },
   },
   vercelToken: "",
-  maxAuditLoops: 3,
+  maxAuditLoops: 2,
   envVars: [],
   cloudTerminalUrl: "",
 };
