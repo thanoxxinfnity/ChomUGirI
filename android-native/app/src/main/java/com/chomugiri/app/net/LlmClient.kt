@@ -1,0 +1,130 @@
+package com.chomugiri.app.net
+
+import com.chomugiri.app.core.ChatTurn
+import com.chomugiri.app.core.ProviderConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+
+class LlmException(val role: String, message: String) : Exception(message)
+
+/**
+ * Generic OpenAI-compatible chat client — works against NVIDIA NIM, OpenRouter, or any custom
+ * endpoint that speaks /chat/completions.
+ *
+ * Everything streams internally, even when the caller only wants the finished string. Slow
+ * models (the 70B/550B roles routinely take 1-3 minutes) will drop an idle non-streaming
+ * connection long before they answer, so streaming is what keeps the socket alive.
+ */
+object LlmClient {
+
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(300, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    private val JSON = "application/json; charset=utf-8".toMediaType()
+
+    private fun buildBody(
+        cfg: ProviderConfig,
+        messages: List<ChatTurn>,
+        temperature: Double,
+        maxTokens: Int,
+        jsonMode: Boolean,
+    ): JSONObject {
+        val arr = JSONArray()
+        messages.forEach {
+            arr.put(JSONObject().put("role", it.role).put("content", it.content))
+        }
+        val body = JSONObject()
+            .put("model", cfg.model)
+            .put("messages", arr)
+            .put("temperature", temperature)
+            .put("max_tokens", maxTokens)
+            .put("stream", true)
+        if (jsonMode) {
+            body.put("response_format", JSONObject().put("type", "json_object"))
+        }
+        return body
+    }
+
+    /** Streams content deltas as they arrive. */
+    fun stream(
+        cfg: ProviderConfig,
+        role: String,
+        messages: List<ChatTurn>,
+        temperature: Double = 0.4,
+        maxTokens: Int = 8192,
+        jsonMode: Boolean = false,
+    ): Flow<String> = flow {
+        if (cfg.apiKey.isBlank()) {
+            throw LlmException(role, "No API key set for $role. Add one in Settings.")
+        }
+        if (cfg.model.isBlank()) {
+            throw LlmException(role, "No model set for $role. Add one in Settings.")
+        }
+
+        val url = cfg.baseUrl.trimEnd('/') + "/chat/completions"
+        val req = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer ${cfg.apiKey}")
+            .addHeader("Accept", "text/event-stream")
+            .post(buildBody(cfg, messages, temperature, maxTokens, jsonMode).toString().toRequestBody(JSON))
+            .build()
+
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                val errText = resp.body?.string().orEmpty()
+                throw LlmException(role, "$role request failed (HTTP ${resp.code}): ${errText.take(300)}")
+            }
+            val source = resp.body?.source() ?: throw LlmException(role, "$role returned an empty response.")
+
+            while (true) {
+                val line = source.readUtf8Line() ?: break
+                if (!line.startsWith("data:")) continue
+                val payload = line.removePrefix("data:").trim()
+                if (payload.isEmpty()) continue
+                if (payload == "[DONE]") break
+
+                val delta = try {
+                    JSONObject(payload)
+                        .optJSONArray("choices")
+                        ?.optJSONObject(0)
+                        ?.optJSONObject("delta")
+                        ?.optString("content")
+                        .orEmpty()
+                } catch (e: Exception) {
+                    // A malformed keep-alive or partial frame is not fatal — keep reading.
+                    ""
+                }
+                if (delta.isNotEmpty()) emit(delta)
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
+    /** Runs the same streaming call but hands back the finished text. */
+    suspend fun complete(
+        cfg: ProviderConfig,
+        role: String,
+        messages: List<ChatTurn>,
+        temperature: Double = 0.4,
+        maxTokens: Int = 8192,
+        jsonMode: Boolean = false,
+    ): String {
+        val sb = StringBuilder()
+        stream(cfg, role, messages, temperature, maxTokens, jsonMode).collect { sb.append(it) }
+        val out = sb.toString().trim()
+        if (out.isEmpty()) throw LlmException(role, "$role returned an empty response.")
+        return out
+    }
+}
