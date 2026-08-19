@@ -129,24 +129,46 @@ h3 {
   animation: pulse-dot 1.2s ease-in-out infinite;
 }
 
-@keyframes stage-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 0 1px var(--accent-soft);
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
   }
-  50% {
-    box-shadow:
-      0 0 0 1px var(--accent-soft),
-      0 0 14px 1px #7c5cff40;
+  100% {
+    background-position: -200% 0;
   }
 }
-.stage-active {
-  animation: stage-glow 1.8s ease-in-out infinite;
+.shimmer-text {
+  background-image: linear-gradient(
+    100deg,
+    var(--fg-muted) 40%,
+    var(--fg) 50%,
+    var(--fg-muted) 60%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.2s linear infinite;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.bubble-in {
+  animation: bubble-in 0.18s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot,
-  .stage-active {
+  .shimmer-text,
+  .bubble-in {
     animation: none;
   }
 }
