@@ -68,12 +68,24 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                 )
                 Spacer(Modifier.height(10.dp))
                 Surface(color = BgElevated, shape = RoundedCornerShape(10.dp)) {
-                    Text(
-                        "ttyd -W -p 7681 bash",
-                        Modifier.padding(12.dp),
-                        style = MonoStyle,
-                        color = Accent2,
-                    )
+                    Column(Modifier.padding(12.dp)) {
+                        Text("1. start the terminal", style = MaterialTheme.typography.labelSmall, color = FgMuted)
+                        Text("ttyd -W -p 7681 bash", style = MonoStyle, color = Accent2)
+                        Spacer(Modifier.height(8.dp))
+                        Text("2. expose it", style = MaterialTheme.typography.labelSmall, color = FgMuted)
+                        Text(
+                            "ngrok http --url=<your-domain> 7681",
+                            style = MonoStyle,
+                            color = Accent2,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Then paste that https:// URL in Settings. Both have to stay running " +
+                                "while you use the terminal.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FgMuted,
+                        )
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
                 Button(

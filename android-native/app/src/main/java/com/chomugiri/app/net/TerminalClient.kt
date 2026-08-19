@@ -30,6 +30,50 @@ private val ANSI = Regex(
 fun stripAnsi(s: String): String =
     ANSI.replace(s, "").replace("\r\n", "\n").replace('\r', '\n')
 
+/**
+ * Turns a failed WebSocket upgrade into something a person can act on. A bare
+ * "connection failed" is useless when the real cause is "your tunnel isn't running" —
+ * these are the cases people actually hit with ttyd behind ngrok.
+ */
+fun explainWsFailure(code: Int?, body: String?, errorMessage: String?): String {
+    val b = body.orEmpty()
+    return when {
+        b.contains("ERR_NGROK_3200") || b.contains("is offline") ->
+            "Tunnel is offline — start ttyd, then start ngrok pointing at its port."
+
+        b.contains("ERR_NGROK_8012") || code == 502 || code == 504 ->
+            "Tunnel is up but nothing is listening on that port — is ttyd running?"
+
+        b.contains("ERR_NGROK") && code == 402 ->
+            "ngrok rejected the request (account limit reached)."
+
+        code == 401 || code == 403 ->
+            "Terminal refused the connection ($code) — check the ttyd credentials/token."
+
+        code == 404 ->
+            "Nothing at that address ($code) — check the URL, and that ttyd is on the port ngrok forwards to."
+
+        code == 200 ->
+            "That URL answered but is not a ttyd terminal — it did not accept a WebSocket upgrade."
+
+        code != null -> "Connection refused (HTTP $code)."
+
+        errorMessage?.contains("UnknownHost", true) == true ||
+            errorMessage?.contains("Unable to resolve", true) == true ->
+            "Can't resolve that hostname — check the URL and your connection."
+
+        errorMessage?.contains("timeout", true) == true ->
+            "Connection timed out — the tunnel may be down."
+
+        else -> "Disconnected: ${errorMessage ?: "connection failed"}"
+    }
+}
+
+private fun explainFailure(t: Throwable, response: Response?): String {
+    val body = response?.let { r -> runCatching { r.body?.string() }.getOrNull() }
+    return explainWsFailure(response?.code, body, t.message)
+}
+
 /** ttyd frames are a single ASCII command byte followed by the payload. */
 private fun frame(s: String): ByteString = s.toByteArray(Charsets.UTF_8).toByteString()
 
@@ -101,8 +145,11 @@ object TerminalClient {
         val req = Request.Builder()
             .url(url)
             .addHeader("Sec-WebSocket-Protocol", "tty")
-            // ngrok's free tier serves a browser interstitial without this.
+            // ngrok's free tier serves a browser interstitial that would swallow the upgrade.
+            // The header is the documented opt-out; the non-browser UA keeps it from triggering
+            // in the first place.
             .addHeader("ngrok-skip-browser-warning", "true")
+            .addHeader("User-Agent", "ChomuGirI-Terminal/1.2")
             .build()
 
         socket = http.newWebSocket(req, object : WebSocketListener() {
@@ -122,10 +169,10 @@ object TerminalClient {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 _connected.value = false
-                val why = t.message ?: "connection failed"
-                _status.value = "Disconnected: $why"
-                appendScreen("\n[disconnected: $why]\n")
-                failAllCaptures("Terminal disconnected: $why")
+                val why = explainFailure(t, response)
+                _status.value = why
+                appendScreen("\n[$why]\n")
+                failAllCaptures(why)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
