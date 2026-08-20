@@ -57,13 +57,7 @@ fun AppRoot(vm: AppViewModel) {
                         Modifier.padding(18.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Surface(color = Accent, shape = RoundedCornerShape(11.dp)) {
-                            Icon(
-                                Icons.Default.AutoAwesome, null,
-                                tint = Color.White,
-                                modifier = Modifier.padding(8.dp).size(18.dp),
-                            )
-                        }
+                        Logomark(size = 34.dp)
                         Spacer(Modifier.width(11.dp))
                         Text("ChomuGirI", style = MaterialTheme.typography.titleLarge)
                     }
@@ -165,7 +159,7 @@ private fun DrawerItem(
 }
 
 @Composable
-private fun ArtifactsListScreen(vm: AppViewModel) {
+internal fun ArtifactsListScreen(vm: AppViewModel) {
     val artifacts by vm.artifacts.collectAsState()
     val list = artifacts.sortedByDescending { it.createdAt }
 

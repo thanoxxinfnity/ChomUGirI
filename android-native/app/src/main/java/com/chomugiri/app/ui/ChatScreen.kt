@@ -281,13 +281,7 @@ private fun EmptyState(hasApiKey: Boolean, onOpenSettings: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(color = Accent, shape = RoundedCornerShape(16.dp)) {
-            Icon(
-                Icons.Default.AutoAwesome, null,
-                tint = Color.White,
-                modifier = Modifier.padding(12.dp).size(24.dp),
-            )
-        }
+        Logomark(size = 52.dp)
         Spacer(Modifier.height(16.dp))
         Text("ChomuGirI", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
