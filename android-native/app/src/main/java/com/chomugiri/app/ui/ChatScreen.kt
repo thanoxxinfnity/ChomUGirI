@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,9 +33,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.chomugiri.app.core.Artifact
 import com.chomugiri.app.core.Message
@@ -65,6 +70,7 @@ fun ChatScreen(
                 EmptyState(
                     hasApiKey = settings.provider(com.chomugiri.app.core.RoleKey.FAST).apiKey.isNotBlank(),
                     onOpenSettings = onOpenSettings,
+                    onSuggestion = { vm.send(it) },
                 )
             } else {
                 LazyColumn(
@@ -274,15 +280,37 @@ fun ShimmerText(text: String) {
     )
 }
 
+private val SUGGESTIONS = listOf(
+    "Build a todo app",
+    "Make a portfolio site",
+    "What's the capital of France?",
+    "Research the latest phone launches",
+)
+
+private val ROUTER_STAGES = listOf(
+    "Fast Chat" to "casual talk",
+    "Kimi K3" to "coder",
+    "GLM 5.2" to "auditor",
+    "DeepSeek R1" to "fallback",
+    "Nemotron" to "safety net",
+)
+
 @Composable
-private fun EmptyState(hasApiKey: Boolean, onOpenSettings: () -> Unit) {
+private fun EmptyState(
+    hasApiKey: Boolean,
+    onOpenSettings: () -> Unit,
+    onSuggestion: (String) -> Unit,
+) {
     Column(
-        Modifier.fillMaxSize().padding(28.dp),
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Logomark(size = 52.dp)
-        Spacer(Modifier.height(16.dp))
+        Logomark(size = 56.dp)
+        Spacer(Modifier.height(18.dp))
         Text("ChomuGirI", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
         Text(
@@ -291,11 +319,12 @@ private fun EmptyState(hasApiKey: Boolean, onOpenSettings: () -> Unit) {
                 "build show up on the project itself.",
             style = MaterialTheme.typography.bodyMedium,
             color = FgMuted,
+            textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 380.dp),
         )
 
         if (!hasApiKey) {
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
             Surface(
                 color = Accent2.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(14.dp),
@@ -309,6 +338,69 @@ private fun EmptyState(hasApiKey: Boolean, onOpenSettings: () -> Unit) {
                     Spacer(Modifier.width(9.dp))
                     Text("No API key yet — tap to add one", color = Accent2, style = MaterialTheme.typography.bodyMedium)
                 }
+            }
+        }
+
+        Spacer(Modifier.height(28.dp))
+
+        FlowRowSuggestions(hasApiKey, onSuggestion)
+
+        Spacer(Modifier.height(28.dp))
+
+        Text(
+            "AUTOMATIC ROUTER",
+            style = MaterialTheme.typography.labelSmall,
+            color = FgMuted,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier
+                .widthIn(max = 480.dp)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ROUTER_STAGES.forEachIndexed { i, (label, note) ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(BgElevated.copy(alpha = 0.7f))
+                        .border(1.dp, BorderCol, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text(label, style = MonoStyle, color = Color.White, fontSize = 11.sp)
+                    Text(note, style = MaterialTheme.typography.labelSmall, color = FgMuted, fontSize = 10.sp)
+                }
+                if (i < ROUTER_STAGES.lastIndex) {
+                    Box(Modifier.width(14.dp).height(1.dp).background(BorderCol))
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.widthIn(max = 420.dp),
+    ) {
+        SUGGESTIONS.forEach { prompt ->
+            Surface(
+                color = BgElevated,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier
+                    .border(1.dp, BorderCol, RoundedCornerShape(20.dp))
+                    .clickable(enabled = hasApiKey) { onSuggestion(prompt) },
+            ) {
+                Text(
+                    prompt,
+                    Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (hasApiKey) Color.White else FgMuted,
+                )
             }
         }
     }

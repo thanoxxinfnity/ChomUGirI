@@ -51,7 +51,14 @@ fun AppRoot(vm: AppViewModel) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = Color(0xFF08080C)) {
+            // An unconstrained ModalDrawerSheet can end up the same width as the scrim behind
+            // it on a narrow screen, so a tap on a drawer item can land on the scrim's dismiss
+            // handler instead — the item never fires and the drawer just closes. A fixed width
+            // keeps the two apart.
+            ModalDrawerSheet(
+                modifier = Modifier.width(300.dp),
+                drawerContainerColor = Color(0xFF08080C),
+            ) {
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
                     Row(
                         Modifier.padding(18.dp),
