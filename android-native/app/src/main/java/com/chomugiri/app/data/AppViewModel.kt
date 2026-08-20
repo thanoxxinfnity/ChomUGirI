@@ -37,9 +37,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
 
-    /** Live output of the terminal build agent. */
+    /** Live output of the terminal build agent. Capped so a long run can't grow this unbounded. */
     private val _agentLog = MutableStateFlow("")
     val agentLog: StateFlow<String> = _agentLog.asStateFlow()
+    private val MAX_AGENT_LOG = 100_000
+
+    private fun appendAgentLog(text: String) {
+        val next = _agentLog.value + text
+        _agentLog.value = if (next.length > MAX_AGENT_LOG) next.takeLast(MAX_AGENT_LOG) else next
+    }
 
     private val _agentRunning = MutableStateFlow(false)
     val agentRunning: StateFlow<Boolean> = _agentRunning.asStateFlow()
@@ -152,7 +158,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- the one entry point the UI calls ----------
 
-    fun send(text: String) {
+    fun send(text: String, forcedIntent: Intent? = null) {
         if (text.isBlank() || _busy.value) return
         val convId = ensureConversation(text)
         val s = _settings.value
@@ -160,7 +166,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         addMessage(convId, Message(id = UUID.randomUUID().toString(), role = "user", content = text))
 
         val assistantId = UUID.randomUUID().toString()
-        val intent = classifyIntent(text)
+        val intent = forcedIntent ?: classifyIntent(text)
         addMessage(
             convId,
             Message(
@@ -330,15 +336,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     askPermission("read", "Let ChomuGirI read \"$path\" on your machine?")
                 }).collect { ev ->
                     when (ev) {
-                        is PipelineEvent.Step -> _agentLog.value += "\n• ${ev.text}"
-                        is PipelineEvent.Chunk -> _agentLog.value += ev.text
-                        is PipelineEvent.Failed -> _agentLog.value += "\n\n[!] ${ev.message}"
-                        is PipelineEvent.Done -> _agentLog.value += "\n\n[done]"
+                        is PipelineEvent.Step -> appendAgentLog("\n• ${ev.text}")
+                        is PipelineEvent.Chunk -> appendAgentLog(ev.text)
+                        is PipelineEvent.Failed -> appendAgentLog("\n\n[!] ${ev.message}")
+                        is PipelineEvent.Done -> appendAgentLog("\n\n[done]")
                         else -> Unit
                     }
                 }
             } catch (e: Exception) {
-                _agentLog.value += "\n\n[!] ${e.message}"
+                appendAgentLog("\n\n[!] ${e.message}")
             } finally {
                 _agentRunning.value = false
             }

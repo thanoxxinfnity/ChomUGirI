@@ -183,20 +183,24 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             }
 
             Section("Pipeline") {
+                val tierLabel = com.chomugiri.app.core.POWER_TIERS
+                    .firstOrNull { it.auditLoops == settings.maxAuditLoops }?.label
                 Text(
-                    "Audit rounds: ${settings.maxAuditLoops}",
+                    "Audit rounds: ${settings.maxAuditLoops}${tierLabel?.let { " ($it)" } ?: ""}",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "Every round is a real model call, so more rounds means a genuinely longer wait.",
+                    "Same as the tier chips above the composer. Every round is a real model " +
+                        "call, so more rounds means a genuinely longer wait — 0 skips the audit " +
+                        "and safety passes entirely for raw speed.",
                     style = MaterialTheme.typography.bodySmall,
                     color = FgMuted,
                 )
                 Slider(
                     value = settings.maxAuditLoops.toFloat(),
                     onValueChange = { v -> vm.updateSettings { it.copy(maxAuditLoops = v.toInt()) } },
-                    valueRange = 1f..5f,
-                    steps = 3,
+                    valueRange = 0f..7f,
+                    steps = 6,
                     colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
                 )
             }

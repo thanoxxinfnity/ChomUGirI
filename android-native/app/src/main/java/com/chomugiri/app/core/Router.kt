@@ -26,9 +26,22 @@ private val GREETING = Regex(
 )
 
 /**
+ * "I want to build X, let's talk it through first" is not the same ask as "build X now" — the
+ * user wants to plan/discuss, not have the swarm start writing files. These phrases keep a
+ * message in chat even when it also contains a code keyword like "app" or "banao".
+ */
+private val DISCUSSION_PHRASES = listOf(
+    "plan kar", "plan banate", "iske baare mein", "iske bare mein", "discuss kar",
+    "baat karte", "baat kar lete", "soch rahe", "sochte hain", "idea de", "kya lagta",
+    "kya khayal", "pehle discuss", "pehle baat", "planning kar", "let's plan", "let's discuss",
+    "what do you think", "before we build", "before building",
+)
+
+/**
  * The only routing signal in the app — there is no manual mode switch. Trivial chat never wakes
  * the heavy swarm; an explicit research ask goes to Deep Research; anything that describes
- * something to build goes to the pipeline.
+ * something to build goes to the pipeline; talking through an idea stays chat so the fast model
+ * can actually ask what the user wants, instead of the swarm silently starting to write files.
  */
 fun classifyIntent(message: String): Intent {
     val trimmed = message.trim()
@@ -36,6 +49,8 @@ fun classifyIntent(message: String): Intent {
     if (trimmed.length < 40 && GREETING.containsMatchIn(trimmed)) return Intent.CHAT
 
     val lower = trimmed.lowercase()
+
+    if (DISCUSSION_PHRASES.any { lower.contains(it) }) return Intent.CHAT
 
     // Research wins over code only when it is clearly an information ask, not a build ask.
     val hasCodeKeyword = CODE_KEYWORDS.any { lower.contains(it) }

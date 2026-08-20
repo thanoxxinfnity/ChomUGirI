@@ -66,6 +66,24 @@ fun defaultModelFor(role: RoleKey): String = when (role) {
 fun defaultProviders(): Map<String, ProviderConfig> =
     ROLE_ORDER.associate { it.name to ProviderConfig(model = defaultModelFor(it)) }
 
+/**
+ * Quick-select tiers for the one real dial the swarm has: how many GLM audit rounds run, and
+ * whether DeepSeek/Nemotron get invoked at all. Same models throughout every tier — nothing
+ * about "AI power" actually changes, only how many passes it makes over the same code.
+ */
+data class PowerTier(val label: String, val auditLoops: Int)
+
+val POWER_TIERS = listOf(
+    PowerTier("LITE", 0),
+    PowerTier("ECONOMY", 1),
+    PowerTier("POWER", 2),
+    PowerTier("EXTRA", 3),
+    PowerTier("MAX", 4),
+    PowerTier("ULTRAMAX", 5),
+    PowerTier("GOJO", 6),
+    PowerTier("SUKUNA", 7),
+)
+
 @Serializable
 data class ChatTurn(val role: String, val content: String)
 

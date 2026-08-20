@@ -22,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -92,10 +94,14 @@ fun ChatScreen(
 
         Composer(
             busy = busy,
-            onSend = { vm.send(it) },
+            onSend = { text, forceResearch ->
+                vm.send(text, if (forceResearch) com.chomugiri.app.core.Intent.RESEARCH else null)
+            },
             onStop = { vm.stop() },
             latestArtifact = artifacts.maxByOrNull { it.createdAt },
             onOpenCanvas = onOpenArtifact,
+            auditLoops = settings.maxAuditLoops,
+            onAuditLoopsChange = { n -> vm.updateSettings { it.copy(maxAuditLoops = n) } },
         )
     }
 }
@@ -415,72 +421,172 @@ private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Uni
 @Composable
 private fun Composer(
     busy: Boolean,
-    onSend: (String) -> Unit,
+    onSend: (String, Boolean) -> Unit,
     onStop: () -> Unit,
     latestArtifact: Artifact? = null,
     onOpenCanvas: (String) -> Unit = {},
+    auditLoops: Int = 2,
+    onAuditLoopsChange: (Int) -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
     var toolsOpen by remember { mutableStateOf(false) }
+    var researchMode by remember { mutableStateOf(false) }
+    var attachedName by remember { mutableStateOf<String?>(null) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val name = com.chomugiri.app.core.queryDisplayName(context, uri) ?: "file"
+        val content = com.chomugiri.app.core.readTextFile(context, uri, maxBytes = 60_000)
+        if (content == null) {
+            android.widget.Toast.makeText(context, "Couldn't read that as text.", android.widget.Toast.LENGTH_SHORT).show()
+        } else {
+            attachedName = name
+            val prefix = if (text.isBlank()) "" else "\n\n"
+            text += "$prefix### $name\n```\n$content\n```\n"
+        }
+    }
 
     Surface(color = BgDark) {
-        Row(
+        Column(
             Modifier
                 .fillMaxWidth()
-                .padding(12.dp)
                 .navigationBarsPadding()
                 .imePadding(),
-            verticalAlignment = Alignment.Bottom,
         ) {
-            Box {
-                IconButton(
-                    onClick = { toolsOpen = true },
-                    modifier = Modifier.size(44.dp),
-                ) {
-                    Icon(Icons.Default.Add, "Tools", tint = FgMuted)
-                }
-                DropdownMenu(expanded = toolsOpen, onDismissRequest = { toolsOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Open Canvas") },
-                        leadingIcon = { Icon(Icons.Default.Fullscreen, null, tint = Accent2) },
-                        enabled = latestArtifact != null,
-                        onClick = {
-                            toolsOpen = false
-                            latestArtifact?.let { onOpenCanvas(it.id) }
-                        },
-                    )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                com.chomugiri.app.core.POWER_TIERS.forEach { tier ->
+                    val selected = tier.auditLoops == auditLoops
+                    Surface(
+                        color = if (selected) Accent.copy(alpha = 0.22f) else BgElevated,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .border(
+                                1.dp,
+                                if (selected) Accent.copy(alpha = 0.7f) else BorderCol,
+                                RoundedCornerShape(14.dp),
+                            )
+                            .clickable { onAuditLoopsChange(tier.auditLoops) },
+                    ) {
+                        Text(
+                            tier.label,
+                            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            style = MonoStyle,
+                            color = if (selected) Color.White else FgMuted,
+                        )
+                    }
                 }
             }
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Message ChomuGirI...", color = FgMuted) },
-                shape = RoundedCornerShape(22.dp),
-                maxLines = 5,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Accent.copy(alpha = 0.6f),
-                    unfocusedBorderColor = BorderCol,
-                    focusedContainerColor = BgElevated,
-                    unfocusedContainerColor = BgElevated,
-                ),
-            )
-            Spacer(Modifier.width(8.dp))
-            FilledIconButton(
-                onClick = {
-                    if (busy) onStop() else {
-                        val t = text.trim()
-                        if (t.isNotEmpty()) { onSend(t); text = "" }
+
+            if (researchMode) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(color = Accent2.copy(alpha = 0.15f), shape = RoundedCornerShape(12.dp)) {
+                        Row(
+                            Modifier
+                                .clickable { researchMode = false }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Deep Research", style = MaterialTheme.typography.labelSmall, color = Accent2)
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Default.Close, "Cancel", tint = Accent2, modifier = Modifier.size(12.dp))
+                        }
                     }
-                },
-                modifier = Modifier.size(48.dp),
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent),
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.Bottom,
             ) {
-                Icon(
-                    if (busy) Icons.Default.Stop else Icons.Default.ArrowUpward,
-                    if (busy) "Stop" else "Send",
-                    tint = Color.White,
+                Box {
+                    IconButton(
+                        onClick = { toolsOpen = true },
+                        modifier = Modifier.size(44.dp),
+                    ) {
+                        Icon(Icons.Default.Add, "Tools", tint = FgMuted)
+                    }
+                    DropdownMenu(expanded = toolsOpen, onDismissRequest = { toolsOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Open Canvas") },
+                            leadingIcon = { Icon(Icons.Default.Fullscreen, null, tint = Accent2) },
+                            enabled = latestArtifact != null,
+                            onClick = {
+                                toolsOpen = false
+                                latestArtifact?.let { onOpenCanvas(it.id) }
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (researchMode) "Deep Research (on)" else "Deep Research") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.TravelExplore, null,
+                                    tint = if (researchMode) Accent else FgMuted,
+                                )
+                            },
+                            onClick = {
+                                toolsOpen = false
+                                researchMode = !researchMode
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Attach a text/code file") },
+                            leadingIcon = { Icon(Icons.Default.AttachFile, null, tint = FgMuted) },
+                            onClick = {
+                                toolsOpen = false
+                                filePicker.launch("text/*")
+                            },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Message ChomuGirI...", color = FgMuted) },
+                    shape = RoundedCornerShape(22.dp),
+                    maxLines = 5,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent.copy(alpha = 0.6f),
+                        unfocusedBorderColor = BorderCol,
+                        focusedContainerColor = BgElevated,
+                        unfocusedContainerColor = BgElevated,
+                    ),
                 )
+                Spacer(Modifier.width(8.dp))
+                FilledIconButton(
+                    onClick = {
+                        if (busy) onStop() else {
+                            val t = text.trim()
+                            if (t.isNotEmpty()) {
+                                onSend(t, researchMode)
+                                text = ""
+                                researchMode = false
+                                attachedName = null
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent),
+                ) {
+                    Icon(
+                        if (busy) Icons.Default.Stop else Icons.Default.ArrowUpward,
+                        if (busy) "Stop" else "Send",
+                        tint = Color.White,
+                    )
+                }
             }
         }
     }

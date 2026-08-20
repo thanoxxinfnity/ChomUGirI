@@ -32,7 +32,8 @@ fun runPipeline(
     settings: AppSettings,
 ): Flow<PipelineEvent> = flow {
     var files: List<GeneratedFile> = emptyList()
-    val maxLoops = settings.maxAuditLoops.coerceIn(1, 5)
+    // 0 means the LITE tier: Kimi's raw output only, no audit/fallback/safety pass at all.
+    val maxLoops = settings.maxAuditLoops.coerceIn(0, 8)
 
     try {
         emit(PipelineEvent.Step("Kimi K3 is writing the code..."))
@@ -116,35 +117,39 @@ fun runPipeline(
             emit(PipelineEvent.Step("DeepSeek R1's fix applied.", done = true))
         }
 
-        emit(PipelineEvent.Step("Nemotron 3 Ultra running the final safety check..."))
-        val nemoOut = LlmClient.complete(
-            settings.provider(RoleKey.NEMOTRON), "Nemotron 3 Ultra 550B",
-            listOf(ChatTurn("system", NEMOTRON_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
-            temperature = 0.1, jsonMode = true, maxTokens = 8192,
-        )
-        val safety = extractJsonObject(nemoOut)
-        val fixedArr = safety?.optJSONArray("fixedFiles")
-        if (fixedArr != null && fixedArr.length() > 0) {
-            val patch = buildList {
-                for (i in 0 until fixedArr.length()) {
-                    val o = fixedArr.optJSONObject(i) ?: continue
-                    val p = o.optString("path"); val c = o.optString("content")
-                    if (p.isNotBlank()) add(GeneratedFile(p, c))
+        if (maxLoops > 0) {
+            emit(PipelineEvent.Step("Nemotron 3 Ultra running the final safety check..."))
+            val nemoOut = LlmClient.complete(
+                settings.provider(RoleKey.NEMOTRON), "Nemotron 3 Ultra 550B",
+                listOf(ChatTurn("system", NEMOTRON_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
+                temperature = 0.1, jsonMode = true, maxTokens = 8192,
+            )
+            val safety = extractJsonObject(nemoOut)
+            val fixedArr = safety?.optJSONArray("fixedFiles")
+            if (fixedArr != null && fixedArr.length() > 0) {
+                val patch = buildList {
+                    for (i in 0 until fixedArr.length()) {
+                        val o = fixedArr.optJSONObject(i) ?: continue
+                        val p = o.optString("path"); val c = o.optString("content")
+                        if (p.isNotBlank()) add(GeneratedFile(p, c))
+                    }
+                }
+                if (patch.isNotEmpty()) {
+                    files = mergeFiles(files, patch)
+                    emit(PipelineEvent.Files(files))
                 }
             }
-            if (patch.isNotEmpty()) {
-                files = mergeFiles(files, patch)
-                emit(PipelineEvent.Files(files))
-            }
-        }
-        emit(
-            PipelineEvent.Step(
-                if (safety?.optBoolean("safe", true) == false)
-                    "Nemotron applied final fixes: ${safety.optString("notes")}"
-                else "Nemotron: code is crash-safe and ready.",
-                done = true,
+            emit(
+                PipelineEvent.Step(
+                    if (safety?.optBoolean("safe", true) == false)
+                        "Nemotron applied final fixes: ${safety.optString("notes")}"
+                    else "Nemotron: code is crash-safe and ready.",
+                    done = true,
+                )
             )
-        )
+        } else {
+            emit(PipelineEvent.Step("LITE tier — skipping audit and safety passes for speed.", done = true))
+        }
 
         emit(PipelineEvent.Done(files))
     } catch (e: Exception) {
