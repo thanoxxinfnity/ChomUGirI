@@ -42,8 +42,8 @@ data class AppSettings(
     val agentTerminalEnabled: Boolean = false,
     /** Once a URL is set, connect on launch and keep retrying instead of requiring a tap. */
     val autoConnectTerminal: Boolean = true,
-    /** Web search for Deep Research. Without this, Deep Research stays off — see SearchClient. */
-    val searchProvider: String = "tavily",
+    /** Web search for Deep Research. DuckDuckGo needs no key — see SearchClient. */
+    val searchProvider: String = "duckduckgo",
     val searchApiKey: String = "",
     /** Used only when the user taps Deploy on a project. Never bundled with the app. */
     val vercelToken: String = "",
@@ -71,17 +71,17 @@ fun defaultProviders(): Map<String, ProviderConfig> =
  * whether DeepSeek/Nemotron get invoked at all. Same models throughout every tier — nothing
  * about "AI power" actually changes, only how many passes it makes over the same code.
  */
-data class PowerTier(val label: String, val auditLoops: Int)
+data class PowerTier(val label: String, val auditLoops: Int, val description: String)
 
 val POWER_TIERS = listOf(
-    PowerTier("LITE", 0),
-    PowerTier("ECONOMY", 1),
-    PowerTier("POWER", 2),
-    PowerTier("EXTRA", 3),
-    PowerTier("MAX", 4),
-    PowerTier("ULTRAMAX", 5),
-    PowerTier("GOJO", 6),
-    PowerTier("SUKUNA", 7),
+    PowerTier("LITE", 0, "Kimi writes the code once. No audit, no fallback, no safety check — fastest, for a quick throwaway script."),
+    PowerTier("ECONOMY", 1, "Kimi writes, GLM audits once and Kimi fixes what it finds, then Nemotron does a final safety pass."),
+    PowerTier("POWER", 2, "The default: 2 audit rounds between Kimi and GLM before Nemotron's safety pass. Good balance of speed and quality."),
+    PowerTier("EXTRA", 3, "3 audit rounds — more chances for GLM to catch something Kimi missed, at the cost of more time."),
+    PowerTier("MAX", 4, "4 audit rounds. Meaningfully slower; worth it for something you actually want to ship as-is."),
+    PowerTier("ULTRAMAX", 5, "5 audit rounds — thorough, and a genuinely long wait since every round is a real model call."),
+    PowerTier("GOJO", 6, "6 audit rounds. At this depth you're mostly paying for diminishing returns, but it's here if you want it."),
+    PowerTier("SUKUNA", 7, "7 audit rounds — the deepest this app goes. Same models as every other tier, just the most passes over the same code."),
 )
 
 @Serializable

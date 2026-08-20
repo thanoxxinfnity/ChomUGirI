@@ -486,6 +486,16 @@ private fun Composer(
                 }
             }
 
+            com.chomugiri.app.core.POWER_TIERS.firstOrNull { it.auditLoops == auditLoops }?.let { tier ->
+                Text(
+                    tier.description,
+                    Modifier.padding(horizontal = 12.dp).padding(bottom = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FgMuted,
+                    maxLines = 2,
+                )
+            }
+
             if (researchMode) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),

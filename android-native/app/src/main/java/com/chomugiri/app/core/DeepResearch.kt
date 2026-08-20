@@ -1,15 +1,20 @@
 package com.chomugiri.app.core
 
+import com.chomugiri.app.net.DuckDuckGoClient
 import com.chomugiri.app.net.LlmClient
 import com.chomugiri.app.net.SearchClient
 import com.chomugiri.app.net.SearchHit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
+/** How many top results get their full page fetched and read, not just the search snippet. */
+private const val PAGES_TO_READ = 4
+
 /**
- * Plan -> search -> synthesise. The answer is written only from results that were genuinely
- * fetched, and every claim is asked to carry a [n] citation back to a real URL. If no search key
- * is configured this refuses outright rather than letting the model improvise from memory.
+ * Plan -> search -> fetch the actual pages -> synthesise. The answer is written only from
+ * content that was genuinely retrieved, and every claim is asked to carry a [n] citation back to
+ * a real URL. Search defaults to DuckDuckGo (no key needed); if search genuinely fails this
+ * refuses outright rather than letting the model improvise from memory.
  */
 fun runDeepResearch(
     question: String,
@@ -18,9 +23,8 @@ fun runDeepResearch(
     if (!SearchClient.isConfigured(settings.searchProvider, settings.searchApiKey)) {
         emit(
             PipelineEvent.Failed(
-                "Deep Research needs a web search API key (Tavily, Brave, or Serper) — add one in " +
-                    "Settings. Without real search results this would just be the model guessing " +
-                    "from memory, which isn't research."
+                "Deep Research needs a search key for ${settings.searchProvider} — add one in " +
+                    "Settings, or switch the provider to DuckDuckGo (no key needed)."
             )
         )
         return@flow
@@ -64,11 +68,27 @@ fun runDeepResearch(
         }
 
         val sources = hits.values.toList()
+
+        // Pull the real page text for the top results instead of relying only on the snippet —
+        // this is what actually lets the model quote a price or a specific figure off the page.
+        val pageText = HashMap<String, String>()
+        sources.take(PAGES_TO_READ).forEach { hit ->
+            emit(PipelineEvent.Step("Reading ${hit.url}...", done = false))
+            val text = try {
+                DuckDuckGoClient.fetchPageText(hit.url)
+            } catch (e: Exception) {
+                null
+            }
+            if (text != null) pageText[hit.url] = text
+            emit(PipelineEvent.Step(if (text != null) "Read ${hit.url}" else "Could not read ${hit.url}", done = true))
+        }
+
         val sourceBlock = sources.mapIndexed { i, h ->
-            "[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}"
+            val body = pageText[h.url] ?: h.snippet
+            "[${i + 1}] ${h.title}\nURL: ${h.url}\n$body"
         }.joinToString("\n\n")
 
-        emit(PipelineEvent.Step("Reading ${sources.size} sources and writing the answer..."))
+        emit(PipelineEvent.Step("Writing the answer from ${sources.size} sources (${pageText.size} full pages read)...", done = true))
 
         val answer = StringBuilder()
         LlmClient.stream(

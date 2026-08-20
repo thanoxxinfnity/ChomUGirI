@@ -15,13 +15,15 @@ data class SearchHit(val title: String, val url: String, val snippet: String)
 class SearchException(message: String) : Exception(message)
 
 /**
- * Web search for Deep Research. There is deliberately no built-in/default key and no fallback
- * to "let the model answer from memory" — without a real search key Deep Research is simply
- * unavailable, because an LLM recalling facts is not research.
+ * Web search for Deep Research. DuckDuckGo needs no key and is the default, so Deep Research
+ * works out of the box; Tavily/Brave/Serper are there for anyone who wants a paid provider's
+ * higher-quality results instead. There is still no fallback to "let the model answer from
+ * memory" — an LLM recalling facts is not research, so if search genuinely fails, Deep Research
+ * fails too rather than quietly guessing.
  */
 object SearchClient {
 
-    val PROVIDERS = listOf("tavily", "brave", "serper")
+    val PROVIDERS = listOf("duckduckgo", "tavily", "brave", "serper")
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -30,18 +32,29 @@ object SearchClient {
 
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
-    fun isConfigured(provider: String, key: String) = key.isNotBlank() && provider in PROVIDERS
+    fun isConfigured(provider: String, key: String) =
+        provider == "duckduckgo" || (key.isNotBlank() && provider in PROVIDERS)
 
     suspend fun search(provider: String, apiKey: String, query: String, limit: Int = 5): List<SearchHit> =
         withContext(Dispatchers.IO) {
-            if (apiKey.isBlank()) throw SearchException("No search API key set — add one in Settings to use Deep Research.")
             when (provider) {
-                "tavily" -> tavily(apiKey, query, limit)
-                "brave" -> brave(apiKey, query, limit)
-                "serper" -> serper(apiKey, query, limit)
+                "duckduckgo" -> DuckDuckGoClient.search(query, limit)
+                "tavily" -> {
+                    requireKey(apiKey); tavily(apiKey, query, limit)
+                }
+                "brave" -> {
+                    requireKey(apiKey); brave(apiKey, query, limit)
+                }
+                "serper" -> {
+                    requireKey(apiKey); serper(apiKey, query, limit)
+                }
                 else -> throw SearchException("Unknown search provider: $provider")
             }
         }
+
+    private fun requireKey(apiKey: String) {
+        if (apiKey.isBlank()) throw SearchException("No search API key set — add one in Settings, or switch the provider to DuckDuckGo (no key needed).")
+    }
 
     private fun exec(req: Request, who: String): JSONObject {
         http.newCall(req).execute().use { resp ->

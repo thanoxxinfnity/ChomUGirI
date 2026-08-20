@@ -1,6 +1,7 @@
 package com.chomugiri.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -143,19 +144,22 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
 
             Section("Deep Research") {
                 Text(
-                    "Needs a web search key. Without one Deep Research stays off on purpose — an " +
-                        "LLM answering from memory is not research, and pretending otherwise would " +
-                        "just be making things up.",
+                    "Defaults to DuckDuckGo — real web search and real page reads, no key needed. " +
+                        "Switch to Tavily/Brave/Serper for a paid provider's results instead. There " +
+                        "is still no fallback to the model just answering from memory — that isn't research.",
                     style = MaterialTheme.typography.bodySmall,
                     color = FgMuted,
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     SearchClient.PROVIDERS.forEach { p ->
                         FilterChip(
                             selected = settings.searchProvider == p,
                             onClick = { vm.updateSettings { it.copy(searchProvider = p) } },
-                            label = { Text(p.replaceFirstChar { c -> c.uppercase() }) },
+                            label = { Text(if (p == "duckduckgo") "DuckDuckGo" else p.replaceFirstChar { c -> c.uppercase() }) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Accent.copy(alpha = 0.22f),
                                 containerColor = BgElevated,
@@ -163,9 +167,11 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                Field("Search API key", settings.searchApiKey, secret = true) { v ->
-                    vm.updateSettings { it.copy(searchApiKey = v) }
+                if (settings.searchProvider != "duckduckgo") {
+                    Spacer(Modifier.height(8.dp))
+                    Field("Search API key", settings.searchApiKey, secret = true) { v ->
+                        vm.updateSettings { it.copy(searchApiKey = v) }
+                    }
                 }
             }
 

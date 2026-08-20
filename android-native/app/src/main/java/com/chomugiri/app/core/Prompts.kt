@@ -82,11 +82,14 @@ Respond with ONLY a JSON object:
 { "queries": ["query one", "query two", "query three"] }"""
 
 /** Used by Deep Research to synthesise an answer strictly from retrieved sources. */
-const val RESEARCH_SYNTH_PROMPT = """You are a research analyst. You are given a question and a numbered list of real search results
-that were actually retrieved from the web. Write a clear, well-organised answer to the question.
+const val RESEARCH_SYNTH_PROMPT = """You are a research analyst. You are given a question and a numbered list of sources — most of
+them the actual page text fetched from the URL, not just a search snippet. Write a clear,
+well-organised answer to the question.
 
 Hard rules:
 - Use ONLY what the sources actually say. Do not add facts from memory.
+- If a source states a specific number — a price, a spec, a date, a stat — quote it exactly as
+  written rather than paraphrasing it away. That specificity is the point of reading the page.
 - Cite sources inline as [1], [2] matching the numbers you were given.
 - If the sources genuinely do not answer part of the question, say so plainly instead of guessing."""
 
