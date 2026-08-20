@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.chomugiri.app.core.*
 import com.chomugiri.app.net.LlmClient
 import com.chomugiri.app.net.TerminalClient
+import com.chomugiri.app.net.VercelClient
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +43,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _agentRunning = MutableStateFlow(false)
     val agentRunning: StateFlow<Boolean> = _agentRunning.asStateFlow()
+
+    /** Non-null while the terminal agent is waiting on an explicit read/compile confirmation. */
+    private val _pendingPermission = MutableStateFlow<AgentPermissionRequest?>(null)
+    val pendingPermission: StateFlow<AgentPermissionRequest?> = _pendingPermission.asStateFlow()
+
+    private val _deployState = MutableStateFlow<Map<String, DeployUiState>>(emptyMap())
+    val deployState: StateFlow<Map<String, DeployUiState>> = _deployState.asStateFlow()
 
     private var currentJob: Job? = null
     private var autoConnectJob: Job? = null
@@ -305,13 +313,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnectTerminal() = TerminalClient.disconnect()
 
-    fun runAgent(goal: String, files: List<GeneratedFile>) {
+    fun runAgent(goal: String, files: List<GeneratedFile>, requiresConfirmation: Boolean = false) {
         if (_agentRunning.value) return
         _agentRunning.value = true
         _agentLog.value = ""
         viewModelScope.launch {
             try {
-                runTerminalAgent(goal, _settings.value, files).collect { ev ->
+                if (requiresConfirmation) {
+                    val ok = askPermission("compile", "Compile an APK on your connected machine? This runs real build commands there.")
+                    if (!ok) {
+                        _agentLog.value = "Cancelled — compile was not confirmed."
+                        return@launch
+                    }
+                }
+                runTerminalAgent(goal, _settings.value, files, onConfirmRead = { path ->
+                    askPermission("read", "Let ChomuGirI read \"$path\" on your machine?")
+                }).collect { ev ->
                     when (ev) {
                         is PipelineEvent.Step -> _agentLog.value += "\n• ${ev.text}"
                         is PipelineEvent.Chunk -> _agentLog.value += ev.text
@@ -329,5 +346,45 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun buildApkFromArtifact(artifact: Artifact) =
-        runAgent(apkBuildGoal(artifact.title), artifact.files)
+        runAgent(apkBuildGoal(artifact.title), artifact.files, requiresConfirmation = true)
+
+    // ---------- deploy ----------
+
+    fun deployArtifact(artifact: Artifact) {
+        val current = _deployState.value[artifact.id]
+        if (current is DeployUiState.Deploying) return
+        _deployState.value = _deployState.value + (artifact.id to DeployUiState.Deploying)
+        viewModelScope.launch {
+            val result = try {
+                val r = VercelClient.deploy(_settings.value.vercelToken, artifact.title, artifact.files)
+                DeployUiState.Success(r.url)
+            } catch (e: Exception) {
+                DeployUiState.Failed(e.message ?: "Deploy failed.")
+            }
+            _deployState.value = _deployState.value + (artifact.id to result)
+        }
+    }
+
+    // ---------- agent permission gate ----------
+
+    /** Suspends until the user taps Allow or Deny in the confirmation dialog. */
+    private suspend fun askPermission(kind: String, description: String): Boolean =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            _pendingPermission.value = AgentPermissionRequest(kind, description) { allowed ->
+                _pendingPermission.value = null
+                if (cont.isActive) cont.resumeWith(Result.success(allowed))
+            }
+        }
 }
+
+sealed class DeployUiState {
+    data object Deploying : DeployUiState()
+    data class Success(val url: String?) : DeployUiState()
+    data class Failed(val message: String) : DeployUiState()
+}
+
+data class AgentPermissionRequest(
+    val kind: String,
+    val description: String,
+    val respond: (Boolean) -> Unit,
+)

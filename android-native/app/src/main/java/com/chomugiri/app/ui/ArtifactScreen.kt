@@ -3,7 +3,10 @@ package com.chomugiri.app.ui
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +16,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -28,6 +34,7 @@ import com.chomugiri.app.core.Artifact
 import com.chomugiri.app.core.suggestedZipName
 import com.chomugiri.app.core.writeArtifactZip
 import com.chomugiri.app.data.AppViewModel
+import com.chomugiri.app.data.DeployUiState
 import com.chomugiri.app.net.TerminalClient
 
 private enum class ArtifactTab(val label: String) { CODE("Code"), APK("Android APK"), TERMINAL("Agent Log") }
@@ -39,6 +46,11 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
     var canvas by remember { mutableStateOf(false) }
     var selected by remember(artifact.id) { mutableStateOf(0) }
     val context = LocalContext.current
+
+    val generating by vm.busy.collectAsState()
+    val deployStates by vm.deployState.collectAsState()
+    val deployState = deployStates[artifact.id]
+    val deployDisabled = generating || deployState is DeployUiState.Deploying
 
     val zipLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -70,12 +82,39 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
                     IconButton(onClick = { zipLauncher.launch(suggestedZipName(artifact)) }) {
                         Icon(Icons.Default.Code, "Export .zip", tint = Accent2)
                     }
+                    IconButton(
+                        onClick = { vm.deployArtifact(artifact) },
+                        enabled = !deployDisabled,
+                    ) {
+                        when (deployState) {
+                            is DeployUiState.Deploying ->
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Accent)
+                            is DeployUiState.Success ->
+                                Icon(Icons.Default.CloudDone, "Deployed", tint = Success)
+                            is DeployUiState.Failed ->
+                                Icon(Icons.Default.CloudOff, "Deploy failed", tint = Danger)
+                            null ->
+                                Icon(Icons.Default.Cloud, "Deploy", tint = if (deployDisabled) FgMuted else Accent)
+                        }
+                    }
                     IconButton(onClick = { canvas = true }) {
                         Icon(Icons.Default.Fullscreen, "Canvas")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BgDark),
             )
+
+            if (generating) {
+                DeployBanner("Deploy is disabled while the swarm is still working.", FgMuted)
+            } else when (val d = deployState) {
+                is DeployUiState.Success -> DeployBanner(
+                    d.url?.let { "Deployed — $it" } ?: "Deployed.",
+                    Success,
+                    onClick = d.url?.let { url -> { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
+                )
+                is DeployUiState.Failed -> DeployBanner(d.message, Danger)
+                else -> Unit
+            }
 
             TabRow(
                 selectedTabIndex = tab.ordinal,
@@ -98,6 +137,24 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
             tab == ArtifactTab.APK -> ApkView(vm, artifact)
             else -> AgentLogView(vm)
         }
+    }
+}
+
+@Composable
+private fun DeployBanner(text: String, color: Color, onClick: (() -> Unit)? = null) {
+    Surface(
+        color = color.copy(alpha = 0.10f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { m -> if (onClick != null) m.clickable(onClick = onClick) else m },
+    ) {
+        Text(
+            text,
+            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = color,
+            maxLines = 2,
+        )
     }
 }
 

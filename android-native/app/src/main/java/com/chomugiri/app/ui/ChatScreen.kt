@@ -20,12 +20,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
@@ -80,7 +82,9 @@ fun ChatScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     items(messages, key = { it.id }) { msg ->
-                        MessageRow(msg, artifacts, onOpenArtifact)
+                        Box(Modifier.animateItem()) {
+                            MessageRow(msg, artifacts, onOpenArtifact)
+                        }
                     }
                 }
             }
@@ -90,6 +94,8 @@ fun ChatScreen(
             busy = busy,
             onSend = { vm.send(it) },
             onStop = { vm.stop() },
+            latestArtifact = artifacts.maxByOrNull { it.createdAt },
+            onOpenCanvas = onOpenArtifact,
         )
     }
 }
@@ -407,8 +413,15 @@ private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Uni
 }
 
 @Composable
-private fun Composer(busy: Boolean, onSend: (String) -> Unit, onStop: () -> Unit) {
+private fun Composer(
+    busy: Boolean,
+    onSend: (String) -> Unit,
+    onStop: () -> Unit,
+    latestArtifact: Artifact? = null,
+    onOpenCanvas: (String) -> Unit = {},
+) {
     var text by remember { mutableStateOf("") }
+    var toolsOpen by remember { mutableStateOf(false) }
 
     Surface(color = BgDark) {
         Row(
@@ -419,6 +432,25 @@ private fun Composer(busy: Boolean, onSend: (String) -> Unit, onStop: () -> Unit
                 .imePadding(),
             verticalAlignment = Alignment.Bottom,
         ) {
+            Box {
+                IconButton(
+                    onClick = { toolsOpen = true },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(Icons.Default.Add, "Tools", tint = FgMuted)
+                }
+                DropdownMenu(expanded = toolsOpen, onDismissRequest = { toolsOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Open Canvas") },
+                        leadingIcon = { Icon(Icons.Default.Fullscreen, null, tint = Accent2) },
+                        enabled = latestArtifact != null,
+                        onClick = {
+                            toolsOpen = false
+                            latestArtifact?.let { onOpenCanvas(it.id) }
+                        },
+                    )
+                }
+            }
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },

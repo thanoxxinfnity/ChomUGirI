@@ -169,6 +169,19 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 }
             }
 
+            Section("Deploy") {
+                Text(
+                    "Needed for the Deploy button on a project. Get a token from Vercel's " +
+                        "Account Settings → Tokens. Stored only on this device, sent only to Vercel.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FgMuted,
+                )
+                Spacer(Modifier.height(10.dp))
+                Field("Vercel token", settings.vercelToken, secret = true) { v ->
+                    vm.updateSettings { it.copy(vercelToken = v) }
+                }
+            }
+
             Section("Pipeline") {
                 Text(
                     "Audit rounds: ${settings.maxAuditLoops}",

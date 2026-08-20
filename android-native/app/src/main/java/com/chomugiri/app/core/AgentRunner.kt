@@ -18,6 +18,14 @@ private val BLOCKED = listOf(
 
 fun isBlockedCommand(cmd: String): Boolean = BLOCKED.any { it.containsMatchIn(cmd) }
 
+/** Commands whose whole point is reading a file's contents back to the model. */
+private val READ_COMMAND = Regex(
+    """\b(cat|head|tail|less|more|sed\s+-n|awk|xxd|hexdump|strings)\s+(\S+)""",
+)
+
+/** Best-effort extraction of the path being read, for the confirmation prompt. */
+fun readTarget(command: String): String? = READ_COMMAND.find(command)?.groupValues?.get(2)
+
 private fun b64(s: String): String =
     Base64.encodeToString(s.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 
@@ -43,6 +51,8 @@ fun runTerminalAgent(
     files: List<GeneratedFile> = emptyList(),
     workDir: String = "~/chomugiri-build",
     maxSteps: Int = 25,
+    /** Called before a file-read command runs; the run stops if this returns false. */
+    onConfirmRead: suspend (path: String) -> Boolean = { true },
 ): Flow<PipelineEvent> = flow {
     if (!TerminalClient.connected.value) {
         emit(PipelineEvent.Failed("Terminal is not connected. Connect it on the Terminal tab first."))
@@ -71,12 +81,30 @@ fun runTerminalAgent(
             emit(PipelineEvent.Step("Copied ${files.size} file(s) to $resolvedDir.", done = true))
         }
 
+        // An upfront plan so the user sees the scope before any command runs, instead of only
+        // finding out step by step — this is announced once, not asked as a question.
+        emit(PipelineEvent.Step("Planning..."))
+        val planRaw = LlmClient.complete(
+            settings.provider(RoleKey.KIMI), "Build agent",
+            listOf(
+                ChatTurn("system", "You plan work, you do not execute it yet."),
+                ChatTurn(
+                    "user",
+                    "Goal: $goal\n\nIn 2-4 short bullet lines, state the plan you'll follow. No preamble.",
+                ),
+            ),
+            temperature = 0.2, maxTokens = 300,
+        )
+        emit(PipelineEvent.Chunk(planRaw.trim() + "\n"))
+        emit(PipelineEvent.Step("Plan ready — starting.", done = true))
+
         val history = mutableListOf(
             ChatTurn("system", TERMINAL_AGENT_PROMPT),
             ChatTurn(
                 "user",
                 buildString {
                     append("Goal: $goal\n\n")
+                    append("Your plan:\n$planRaw\n\n")
                     append("You are already in a shell. Working directory: $resolvedDir\n")
                     if (files.isNotEmpty()) {
                         append("These files have already been written there:\n")
@@ -111,6 +139,14 @@ fun runTerminalAgent(
             if (isBlockedCommand(command)) {
                 emit(PipelineEvent.Failed("Refused to run a destructive command: $command"))
                 return@flow
+            }
+
+            readTarget(command)?.let { path ->
+                emit(PipelineEvent.Step("Waiting for permission to read $path...", done = true))
+                if (!onConfirmRead(path)) {
+                    emit(PipelineEvent.Failed("Read of $path was not allowed — stopping."))
+                    return@flow
+                }
             }
 
             emit(PipelineEvent.Step("[$step] ${thought.ifEmpty { command }}"))

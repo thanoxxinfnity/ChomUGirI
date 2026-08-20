@@ -45,6 +45,8 @@ data class AppSettings(
     /** Web search for Deep Research. Without this, Deep Research stays off — see SearchClient. */
     val searchProvider: String = "tavily",
     val searchApiKey: String = "",
+    /** Used only when the user taps Deploy on a project. Never bundled with the app. */
+    val vercelToken: String = "",
 ) {
     fun provider(role: RoleKey): ProviderConfig =
         providers[role.name] ?: ProviderConfig(model = defaultModelFor(role))

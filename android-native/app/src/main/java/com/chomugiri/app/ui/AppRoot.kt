@@ -1,6 +1,8 @@
 package com.chomugiri.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -8,9 +10,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
@@ -42,6 +46,9 @@ fun AppRoot(vm: AppViewModel) {
     // The project panel is a full screen of its own — back should close it, not exit the app.
     BackHandler(enabled = openArtifact != null) { vm.closeArtifact() }
     BackHandler(enabled = openArtifact == null && screen != Screen.CHAT) { screen = Screen.CHAT }
+
+    val pending by vm.pendingPermission.collectAsState()
+    pending?.let { req -> AgentPermissionDialog(req) }
 
     if (openArtifact != null) {
         ArtifactScreen(vm, openArtifact) { vm.closeArtifact() }
@@ -131,18 +138,43 @@ fun AppRoot(vm: AppViewModel) {
                 }
             }
 
-            when (screen) {
-                Screen.CHAT -> ChatScreen(
-                    vm,
-                    onOpenSettings = { screen = Screen.SETTINGS },
-                    onOpenArtifact = { vm.openArtifact(it) },
-                )
-                Screen.ARTIFACTS -> ArtifactsListScreen(vm)
-                Screen.TERMINAL -> TerminalScreen(vm) { screen = Screen.SETTINGS }
-                Screen.SETTINGS -> SettingsScreen(vm) { screen = Screen.CHAT }
+            Crossfade(targetState = screen, label = "screen", animationSpec = tween(180)) { s ->
+                when (s) {
+                    Screen.CHAT -> ChatScreen(
+                        vm,
+                        onOpenSettings = { screen = Screen.SETTINGS },
+                        onOpenArtifact = { vm.openArtifact(it) },
+                    )
+                    Screen.ARTIFACTS -> ArtifactsListScreen(vm)
+                    Screen.TERMINAL -> TerminalScreen(vm) { screen = Screen.SETTINGS }
+                    Screen.SETTINGS -> SettingsScreen(vm) { screen = Screen.CHAT }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun AgentPermissionDialog(req: com.chomugiri.app.data.AgentPermissionRequest) {
+    AlertDialog(
+        onDismissRequest = { req.respond(false) },
+        containerColor = BgElevated,
+        icon = {
+            Icon(
+                if (req.kind == "compile") Icons.Default.Android else Icons.Default.Description,
+                null,
+                tint = Accent,
+            )
+        },
+        title = { Text(if (req.kind == "compile") "Compile on your machine?" else "Read a file?") },
+        text = { Text(req.description, color = FgMuted) },
+        confirmButton = {
+            TextButton(onClick = { req.respond(true) }) { Text("Allow", color = Accent) }
+        },
+        dismissButton = {
+            TextButton(onClick = { req.respond(false) }) { Text("Deny", color = FgMuted) }
+        },
+    )
 }
 
 @Composable
