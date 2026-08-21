@@ -450,27 +450,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * Connects on launch and keeps retrying with a backoff, because the usual reason this fails
      * is a tunnel that simply hasn't been started yet — worth picking up on its own once it is.
      */
-    private fun startAutoConnect() {
-        if (autoConnectJob?.isActive == true) return
-        autoConnectJob = viewModelScope.launch {
-            try {
-                var delayMs = 4_000L
-                repeat(20) {
-                    if (TerminalClient.connected.value) return@launch
-                    val s = _settings.value
-                    if (!s.autoConnectTerminal || s.terminalUrl.isBlank()) return@launch
-                    TerminalClient.connect(s.terminalUrl, s.terminalAuthToken)
-                    delay(delayMs)
-                    if (TerminalClient.connected.value) return@launch
-                    delayMs = (delayMs * 2).coerceAtMost(60_000L)
-                }
-            } catch (e: Exception) {
-                // Best-effort background retry — a failure here must never take the app down.
+    private suspend fun connectRetryLoop(requireAutoConnectSetting: Boolean) {
+        try {
+            var delayMs = 4_000L
+            repeat(20) {
+                if (TerminalClient.connected.value) return
+                val s = _settings.value
+                if (s.terminalUrl.isBlank()) return
+                if (requireAutoConnectSetting && !s.autoConnectTerminal) return
+                TerminalClient.connect(s.terminalUrl, s.terminalAuthToken)
+                delay(delayMs)
+                if (TerminalClient.connected.value) return
+                delayMs = (delayMs * 2).coerceAtMost(60_000L)
             }
+        } catch (e: Exception) {
+            // Best-effort background retry — a failure here must never take the app down.
         }
     }
 
-    fun retryTerminal() = startAutoConnect()
+    private fun startAutoConnect() {
+        if (autoConnectJob?.isActive == true) return
+        autoConnectJob = viewModelScope.launch { connectRetryLoop(requireAutoConnectSetting = true) }
+    }
+
+    /**
+     * The user tapped Reconnect. This must always make a real attempt right now — not silently
+     * no-op just because a background auto-connect loop happens to already be "active" (it could
+     * be sitting in a 60s delay between retries), and not gated by the auto-connect setting,
+     * which only controls whether connecting happens automatically at launch.
+     */
+    fun retryTerminal() {
+        autoConnectJob?.cancel()
+        autoConnectJob = viewModelScope.launch { connectRetryLoop(requireAutoConnectSetting = false) }
+    }
 
     fun disconnectTerminal() = TerminalClient.disconnect()
 

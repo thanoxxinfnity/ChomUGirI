@@ -22,6 +22,27 @@ Do not write the minimum that technically satisfies the request. Build it proper
 - Split code into sensible files/functions rather than one dense blob, the way a competent
   developer would actually organise it.
 
+If the request is a website, landing page, or portfolio, treat visual polish as part of the
+spec, not decoration on top of it — a page that "technically works" but looks like a default
+browser stylesheet is not done:
+- A real hero section with an actual value proposition, not just a name and a paragraph.
+- A deliberate type scale (distinct heading/body sizes, a webfont via Google Fonts or a solid
+  system-font stack) and consistent spacing — never default browser margins on headings/lists.
+- A real color system: one background, one accent, readable text contrast — not black text on
+  white with blue default links.
+- Section rhythm: hero, then 2-4 clearly separated sections (about/projects/skills/contact for a
+  portfolio), each with breathing room, not everything crammed edge-to-edge.
+- Responsive by default: it must not break or overflow at a phone width.
+- Small motion where it earns its place (hover states, a subtle transition) — not required, but
+  a page with zero interactivity reads as unfinished.
+- Where a real photo or illustration genuinely belongs (a hero image, a portrait, a project
+  thumbnail), write {{IMAGE: a short, concrete description}} as the src/url value — e.g.
+  <img src="{{IMAGE: a minimalist workspace with a laptop and coffee, soft morning light}}">
+  or background-image: url({{IMAGE: abstract purple gradient mesh}}). This gets replaced with a
+  real generated image automatically — never emit a placeholder image URL that won't actually
+  load, and never leave an <img> with an empty or fake src. Use CSS shapes/gradients/icons
+  instead of a marker for anything simple/decorative that doesn't need to be a photo.
+
 $FILE_FORMAT_INSTRUCTIONS"""
 
 const val KIMI_FIX_SYSTEM_PROMPT = """You are Kimi K3. GLM 5.2 (the auditor) found issues in your code. Fix every issue listed and

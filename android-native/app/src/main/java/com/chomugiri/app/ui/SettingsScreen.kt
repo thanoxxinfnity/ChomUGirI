@@ -200,6 +200,25 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 }
             }
 
+            Section("Image Generation (Gemini)") {
+                Text(
+                    "Real generated images for projects — used automatically wherever the coder " +
+                        "wants a real photo/illustration instead of a broken placeholder. Get a " +
+                        "key from Google AI Studio. With no key set, those spots get a plain " +
+                        "gradient instead — never a broken image link.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FgMuted,
+                )
+                Spacer(Modifier.height(10.dp))
+                Field("Gemini API key", settings.geminiApiKey, secret = true) { v ->
+                    vm.updateSettings { it.copy(geminiApiKey = v) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Field("Model", settings.geminiModel) { v ->
+                    vm.updateSettings { it.copy(geminiModel = v) }
+                }
+            }
+
             Section("Deploy") {
                 Text(
                     "Needed for the Deploy button on a project. Get a token from Vercel's " +

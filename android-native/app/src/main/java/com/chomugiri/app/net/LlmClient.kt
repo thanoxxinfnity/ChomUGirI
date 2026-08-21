@@ -52,9 +52,10 @@ object LlmClient {
             .put("temperature", temperature)
             .put("max_tokens", maxTokens)
             .put("stream", true)
-        if (jsonMode) {
-            body.put("response_format", JSONObject().put("type", "json_object"))
-        }
+        // Deliberately NOT sending response_format:json_object even when jsonMode is requested —
+        // plenty of models behind an aggregator (NIM, OpenRouter) 400 on a response_format they
+        // don't recognise. The prompt already demands JSON-only output, and extractJsonObject()
+        // is lenient about parsing it back out, so this parameter buys nothing but fragility.
         return body
     }
 

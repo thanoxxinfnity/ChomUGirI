@@ -51,6 +51,9 @@ data class AppSettings(
     val themeMode: String = "dark",
     /** User-saved terminal commands, shown as tap-to-run chips on the Terminal tab. */
     val terminalMacros: List<String> = emptyList(),
+    /** Real image generation for {{IMAGE: ...}} markers in generated projects. Never bundled. */
+    val geminiApiKey: String = "",
+    val geminiModel: String = "gemini-2.5-flash-image",
 ) {
     fun provider(role: RoleKey): ProviderConfig =
         providers[role.name] ?: ProviderConfig(model = defaultModelFor(role))

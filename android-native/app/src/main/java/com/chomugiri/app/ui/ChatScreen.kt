@@ -9,7 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +21,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Check
@@ -558,7 +558,6 @@ private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Uni
     }
 }
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun Composer(
     busy: Boolean,
@@ -574,6 +573,8 @@ private fun Composer(
     var toolsOpen by remember { mutableStateOf(false) }
     var researchMode by remember { mutableStateOf(false) }
     var attachedName by remember { mutableStateOf<String?>(null) }
+    var forcedRole by remember { mutableStateOf<com.chomugiri.app.core.RoleKey?>(null) }
+    var roleMenuOpen by remember { mutableStateOf(false) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val filePicker = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -648,6 +649,40 @@ private fun Composer(
                     color = FgMuted,
                     maxLines = 2,
                 )
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box {
+                    Surface(
+                        color = if (forcedRole != null) Accent.copy(alpha = 0.18f) else BgElevated,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.clickable { roleMenuOpen = true },
+                    ) {
+                        Row(Modifier.padding(horizontal = 9.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                forcedRole?.let { com.chomugiri.app.core.ROLE_LABELS[it] } ?: "Auto",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (forcedRole != null) Accent else FgMuted,
+                            )
+                            Icon(Icons.Default.ArrowDropDown, null, tint = if (forcedRole != null) Accent else FgMuted, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                    DropdownMenu(expanded = roleMenuOpen, onDismissRequest = { roleMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Auto (router decides)") },
+                            onClick = { roleMenuOpen = false; forcedRole = null },
+                        )
+                        com.chomugiri.app.core.ROLE_ORDER.forEach { role ->
+                            DropdownMenuItem(
+                                text = { Text(com.chomugiri.app.core.ROLE_LABELS[role] ?: role.name) },
+                                onClick = { roleMenuOpen = false; forcedRole = role },
+                            )
+                        }
+                    }
+                }
             }
 
             if (researchMode) {
@@ -752,53 +787,22 @@ private fun Composer(
                     Icon(Icons.Default.Mic, "Voice input", tint = FgMuted)
                 }
                 Spacer(Modifier.width(4.dp))
-                var roleMenuOpen by remember { mutableStateOf(false) }
                 fun doSend() {
                     val t = text.trim()
-                    if (t.isNotEmpty()) {
-                        onSend(t, researchMode)
-                        text = ""; researchMode = false; attachedName = null
-                    }
+                    if (t.isEmpty()) return
+                    forcedRole?.let { onSendWithRole(t, it) } ?: onSend(t, researchMode)
+                    text = ""; researchMode = false; attachedName = null
                 }
-                Box {
-                    Surface(
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = Accent,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .combinedClickable(
-                                onClick = { if (busy) onStop() else doSend() },
-                                onLongClick = { if (!busy) roleMenuOpen = true },
-                            ),
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(
-                                if (busy) Icons.Default.Stop else Icons.Default.ArrowUpward,
-                                if (busy) "Stop" else "Send (long-press to pick a model)",
-                                tint = Color.White,
-                            )
-                        }
-                    }
-                    DropdownMenu(expanded = roleMenuOpen, onDismissRequest = { roleMenuOpen = false }) {
-                        Text(
-                            "Send this one message with:",
-                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelSmall, color = FgMuted,
-                        )
-                        com.chomugiri.app.core.ROLE_ORDER.forEach { role ->
-                            DropdownMenuItem(
-                                text = { Text(com.chomugiri.app.core.ROLE_LABELS[role] ?: role.name) },
-                                onClick = {
-                                    roleMenuOpen = false
-                                    val t = text.trim()
-                                    if (t.isNotEmpty()) {
-                                        onSendWithRole(t, role)
-                                        text = ""; researchMode = false; attachedName = null
-                                    }
-                                },
-                            )
-                        }
-                    }
+                FilledIconButton(
+                    onClick = { if (busy) onStop() else doSend() },
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent),
+                ) {
+                    Icon(
+                        if (busy) Icons.Default.Stop else Icons.Default.ArrowUpward,
+                        if (busy) "Stop" else "Send",
+                        tint = Color.White,
+                    )
                 }
             }
         }

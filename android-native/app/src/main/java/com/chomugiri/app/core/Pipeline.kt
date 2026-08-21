@@ -54,13 +54,21 @@ fun runPipeline(
         var lastIssues: List<AuditIssue> = emptyList()
         val resolvedByParts = mutableListOf("Kimi K3")
 
+        // A failure at any of these later stages must not throw away the code Kimi already
+        // wrote — it degrades to "skip this stage" so the user still gets a real, working
+        // project instead of a scary full failure over what's often just one flaky call.
         for (i in 1..maxLoops) {
             emit(PipelineEvent.Step("GLM 5.2 audit round $i/$maxLoops..."))
-            val glmOut = LlmClient.complete(
-                settings.provider(RoleKey.GLM), "GLM 5.2",
-                listOf(ChatTurn("system", GLM_AUDIT_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
-                temperature = 0.1, jsonMode = true,
-            )
+            val glmOut = try {
+                LlmClient.complete(
+                    settings.provider(RoleKey.GLM), "GLM 5.2",
+                    listOf(ChatTurn("system", GLM_AUDIT_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
+                    temperature = 0.1, jsonMode = true,
+                )
+            } catch (e: Exception) {
+                emit(PipelineEvent.Step("GLM audit failed (${e.message?.take(150)}) — skipping this round.", done = true))
+                break
+            }
             val parsed = parseIssues(extractJsonObject(glmOut))
             clean = parsed.first
             lastIssues = parsed.second
@@ -79,17 +87,22 @@ fun runPipeline(
             if (clean || i == maxLoops) break
 
             emit(PipelineEvent.Step("Kimi K3 is fixing issues (round $i)..."))
-            val fixOut = LlmClient.complete(
-                settings.provider(RoleKey.KIMI), "Kimi K3",
-                listOf(
-                    ChatTurn("system", KIMI_FIX_SYSTEM_PROMPT),
-                    ChatTurn(
-                        "user",
-                        "Current files:\n${filesToPromptBlock(files)}\n\nIssues to fix:\n${issuesToText(lastIssues)}",
+            val fixOut = try {
+                LlmClient.complete(
+                    settings.provider(RoleKey.KIMI), "Kimi K3",
+                    listOf(
+                        ChatTurn("system", KIMI_FIX_SYSTEM_PROMPT),
+                        ChatTurn(
+                            "user",
+                            "Current files:\n${filesToPromptBlock(files)}\n\nIssues to fix:\n${issuesToText(lastIssues)}",
+                        ),
                     ),
-                ),
-                maxTokens = 8192,
-            )
+                    maxTokens = 8192,
+                )
+            } catch (e: Exception) {
+                emit(PipelineEvent.Step("Kimi's fix call failed (${e.message?.take(150)}) — keeping the last working version.", done = true))
+                break
+            }
             val fixed = parseFileBlocks(fixOut)
             if (fixed.isNotEmpty()) {
                 files = mergeFiles(files, fixed)
@@ -99,60 +112,78 @@ fun runPipeline(
         }
 
         if (!clean && lastIssues.isNotEmpty()) {
-            resolvedByParts += "DeepSeek R1 (fallback)"
             emit(PipelineEvent.Step("Kimi/GLM got stuck — DeepSeek R1 is reasoning through the bug..."))
-            val deepOut = LlmClient.complete(
-                settings.provider(RoleKey.DEEPSEEK), "DeepSeek R1",
-                listOf(
-                    ChatTurn("system", DEEPSEEK_SYSTEM_PROMPT),
-                    ChatTurn(
-                        "user",
-                        "Files:\n${filesToPromptBlock(files)}\n\nUnresolved issues after $maxLoops audit rounds:\n${issuesToText(lastIssues)}",
+            try {
+                val deepOut = LlmClient.complete(
+                    settings.provider(RoleKey.DEEPSEEK), "DeepSeek R1",
+                    listOf(
+                        ChatTurn("system", DEEPSEEK_SYSTEM_PROMPT),
+                        ChatTurn(
+                            "user",
+                            "Files:\n${filesToPromptBlock(files)}\n\nUnresolved issues after $maxLoops audit rounds:\n${issuesToText(lastIssues)}",
+                        ),
                     ),
-                ),
-                temperature = 0.2, maxTokens = 8192,
-            )
-            val deepFixed = parseFileBlocks(deepOut)
-            if (deepFixed.isNotEmpty()) {
-                files = mergeFiles(files, deepFixed)
-                emit(PipelineEvent.Files(files))
+                    temperature = 0.2, maxTokens = 8192,
+                )
+                val deepFixed = parseFileBlocks(deepOut)
+                if (deepFixed.isNotEmpty()) {
+                    files = mergeFiles(files, deepFixed)
+                    emit(PipelineEvent.Files(files))
+                    resolvedByParts += "DeepSeek R1 (fallback)"
+                }
+                emit(PipelineEvent.Step("DeepSeek R1's fix applied.", done = true))
+            } catch (e: Exception) {
+                emit(PipelineEvent.Step("DeepSeek R1 fallback failed (${e.message?.take(150)}) — keeping GLM's last version.", done = true))
             }
-            emit(PipelineEvent.Step("DeepSeek R1's fix applied.", done = true))
         }
 
         if (maxLoops > 0) {
             emit(PipelineEvent.Step("Nemotron 3 Ultra running the final safety check..."))
-            val nemoOut = LlmClient.complete(
-                settings.provider(RoleKey.NEMOTRON), "Nemotron 3 Ultra 550B",
-                listOf(ChatTurn("system", NEMOTRON_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
-                temperature = 0.1, jsonMode = true, maxTokens = 8192,
-            )
-            val safety = extractJsonObject(nemoOut)
-            val fixedArr = safety?.optJSONArray("fixedFiles")
-            if (fixedArr != null && fixedArr.length() > 0) {
-                val patch = buildList {
-                    for (i in 0 until fixedArr.length()) {
-                        val o = fixedArr.optJSONObject(i) ?: continue
-                        val p = o.optString("path"); val c = o.optString("content")
-                        if (p.isNotBlank()) add(GeneratedFile(p, c))
+            try {
+                val nemoOut = LlmClient.complete(
+                    settings.provider(RoleKey.NEMOTRON), "Nemotron 3 Ultra 550B",
+                    listOf(ChatTurn("system", NEMOTRON_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
+                    temperature = 0.1, jsonMode = true, maxTokens = 8192,
+                )
+                val safety = extractJsonObject(nemoOut)
+                val fixedArr = safety?.optJSONArray("fixedFiles")
+                if (fixedArr != null && fixedArr.length() > 0) {
+                    val patch = buildList {
+                        for (i in 0 until fixedArr.length()) {
+                            val o = fixedArr.optJSONObject(i) ?: continue
+                            val p = o.optString("path"); val c = o.optString("content")
+                            if (p.isNotBlank()) add(GeneratedFile(p, c))
+                        }
+                    }
+                    if (patch.isNotEmpty()) {
+                        files = mergeFiles(files, patch)
+                        emit(PipelineEvent.Files(files))
+                        resolvedByParts += "Nemotron safety fix"
                     }
                 }
-                if (patch.isNotEmpty()) {
-                    files = mergeFiles(files, patch)
-                    emit(PipelineEvent.Files(files))
-                    resolvedByParts += "Nemotron safety fix"
-                }
-            }
-            emit(
-                PipelineEvent.Step(
-                    if (safety?.optBoolean("safe", true) == false)
-                        "Nemotron applied final fixes: ${safety.optString("notes")}"
-                    else "Nemotron: code is crash-safe and ready.",
-                    done = true,
+                emit(
+                    PipelineEvent.Step(
+                        if (safety?.optBoolean("safe", true) == false)
+                            "Nemotron applied final fixes: ${safety.optString("notes")}"
+                        else "Nemotron: code is crash-safe and ready.",
+                        done = true,
+                    )
                 )
-            )
+            } catch (e: Exception) {
+                emit(PipelineEvent.Step("Nemotron safety check failed (${e.message?.take(150)}) — shipping the last working version.", done = true))
+            }
         } else {
             emit(PipelineEvent.Step("LITE tier — skipping audit and safety passes for speed.", done = true))
+        }
+
+        try {
+            val withImages = resolveImageMarkers(files, settings) { msg -> emit(PipelineEvent.Step(msg)) }
+            if (withImages != files) {
+                files = withImages
+                emit(PipelineEvent.Files(files))
+            }
+        } catch (e: Exception) {
+            emit(PipelineEvent.Step("Image generation step failed (${e.message?.take(150)}) — shipping without it.", done = true))
         }
 
         emit(PipelineEvent.Done(files, resolvedByParts.joinToString(" + "), issuesToText(lastIssues).lines().filter { it.isNotBlank() }))
