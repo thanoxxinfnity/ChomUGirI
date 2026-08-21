@@ -288,6 +288,80 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         persistArtifacts()
     }
 
+    fun renameArtifact(id: String, title: String) {
+        if (title.isBlank()) return
+        _artifacts.value = _artifacts.value.map { if (it.id == id) it.copy(title = title.trim()) else it }
+        persistArtifacts()
+    }
+
+    private fun mutateFiles(artifactId: String, block: (List<GeneratedFile>) -> List<GeneratedFile>) {
+        _artifacts.value = _artifacts.value.map {
+            if (it.id == artifactId) it.copy(files = block(it.files)) else it
+        }
+        persistArtifacts()
+    }
+
+    fun updateFileContent(artifactId: String, path: String, content: String) =
+        mutateFiles(artifactId) { files -> files.map { if (it.path == path) it.copy(content = content) else it } }
+
+    fun renameFile(artifactId: String, oldPath: String, newPath: String) {
+        if (newPath.isBlank() || newPath == oldPath) return
+        mutateFiles(artifactId) { files ->
+            if (files.any { it.path == newPath }) files
+            else files.map { if (it.path == oldPath) it.copy(path = newPath.trim()) else it }
+        }
+    }
+
+    fun deleteFile(artifactId: String, path: String) =
+        mutateFiles(artifactId) { files -> files.filterNot { it.path == path } }
+
+    fun addFile(artifactId: String, path: String, content: String = "") {
+        if (path.isBlank()) return
+        mutateFiles(artifactId) { files ->
+            if (files.any { it.path == path }) files else files + GeneratedFile(path.trim(), content)
+        }
+    }
+
+    /** Non-null path currently being regenerated, so the UI can show a spinner on just that chip. */
+    private val _regeneratingFile = MutableStateFlow<String?>(null)
+    val regeneratingFile: StateFlow<String?> = _regeneratingFile.asStateFlow()
+
+    fun regenerateFile(artifact: Artifact, path: String, instruction: String) {
+        if (_regeneratingFile.value != null) return
+        val target = artifact.files.firstOrNull { it.path == path } ?: return
+        _regeneratingFile.value = path
+        viewModelScope.launch {
+            try {
+                val rewritten = LlmClient.complete(
+                    _settings.value.provider(RoleKey.KIMI), "Kimi K3",
+                    listOf(
+                        ChatTurn(
+                            "system",
+                            "You are Kimi K3. Rewrite exactly one file from a project. Output ONLY that file " +
+                                "as a single ### FILE: block in the usual format, nothing else — no other files, " +
+                                "no prose.",
+                        ),
+                        ChatTurn(
+                            "user",
+                            "Project context (for reference, do not rewrite these):\n" +
+                                artifact.files.filterNot { it.path == path }
+                                    .joinToString("\n\n") { "### FILE: ${it.path}\n```\n${it.content.take(1500)}\n```" } +
+                                "\n\nFile to rewrite: ${target.path}\nCurrent content:\n```\n${target.content}\n```\n\n" +
+                                "Instruction: ${instruction.ifBlank { "Improve it — fix any bugs, tidy it up." }}",
+                        ),
+                    ),
+                    maxTokens = 8192,
+                )
+                val fixed = parseFileBlocks(rewritten).firstOrNull()
+                if (fixed != null) updateFileContent(artifact.id, path, fixed.content)
+            } catch (e: Exception) {
+                // Best-effort — the UI just stops showing the spinner; the file is left as-is.
+            } finally {
+                _regeneratingFile.value = null
+            }
+        }
+    }
+
     // ---------- terminal agent ----------
 
     fun connectTerminal() {
