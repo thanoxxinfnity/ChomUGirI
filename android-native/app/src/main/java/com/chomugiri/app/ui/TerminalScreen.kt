@@ -62,7 +62,7 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                 Text(
                     "Run ttyd on your own machine and expose it with your own tunnel " +
                         "(ngrok, Cloudflare — whatever you use), then paste that URL in Settings. " +
-                        "This is always your own — ChomuGirI never ships or shares a tunnel URL.",
+                        "This is always your own — ChomuGiri never ships or shares a tunnel URL.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = FgMuted,
                 )

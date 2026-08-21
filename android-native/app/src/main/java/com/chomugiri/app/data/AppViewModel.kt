@@ -34,8 +34,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _activeArtifactId = MutableStateFlow<String?>(null)
     val activeArtifactId: StateFlow<String?> = _activeArtifactId.asStateFlow()
 
-    private val _busy = MutableStateFlow(false)
-    val busy: StateFlow<Boolean> = _busy.asStateFlow()
+    /**
+     * Which conversations currently have a pipeline/chat job running. Keyed by conversation id
+     * (not a single global flag) so one chat can keep working while the user switches to and
+     * sends in another — matching how every other multi-chat AI app behaves.
+     */
+    private val jobs = mutableMapOf<String, Job>()
+    private val _busyConversations = MutableStateFlow<Set<String>>(emptySet())
+    val busyConversations: StateFlow<Set<String>> = _busyConversations.asStateFlow()
 
     /** Live output of the terminal build agent. Capped so a long run can't grow this unbounded. */
     private val _agentLog = MutableStateFlow("")
@@ -57,7 +63,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _deployState = MutableStateFlow<Map<String, DeployUiState>>(emptyMap())
     val deployState: StateFlow<Map<String, DeployUiState>> = _deployState.asStateFlow()
 
-    private var currentJob: Job? = null
     private var autoConnectJob: Job? = null
     private var loaded = false
 
@@ -159,7 +164,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- the one entry point the UI calls ----------
 
     fun send(text: String, forcedIntent: Intent? = null) {
-        if (text.isBlank() || _busy.value) return
+        if (text.isBlank()) return
+        // Only refuse if THIS conversation already has a job running — a different, idle
+        // conversation must stay free to send while another one is mid-pipeline.
+        _activeConversationId.value?.let { if (jobs.containsKey(it)) return }
         val convId = ensureConversation(text)
         val s = _settings.value
 
@@ -181,8 +189,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             ),
         )
 
-        _busy.value = true
-        currentJob = viewModelScope.launch {
+        val job = viewModelScope.launch {
             try {
                 when (intent) {
                     Intent.CHAT -> runFastChat(convId, assistantId, text, s)
@@ -195,15 +202,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } finally {
                 updateMessage(convId, assistantId) { it.copy(streaming = false) }
-                _busy.value = false
+                jobs.remove(convId)
+                _busyConversations.value = jobs.keys.toSet()
                 persistConversations()
             }
         }
+        jobs[convId] = job
+        _busyConversations.value = jobs.keys.toSet()
     }
 
-    fun stop() {
-        currentJob?.cancel()
-        _busy.value = false
+    /** Stops the given conversation's job, or the active one if none is given. */
+    fun stop(convId: String? = null) {
+        val id = convId ?: _activeConversationId.value ?: return
+        jobs[id]?.cancel()
+        jobs.remove(id)
+        _busyConversations.value = jobs.keys.toSet()
     }
 
     private suspend fun runFastChat(convId: String, msgId: String, text: String, s: AppSettings) {
@@ -230,6 +243,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val steps = mutableListOf<ThinkingStep>()
         val body = StringBuilder()
         var artifactId: String? = null
+        val startedAt = System.currentTimeMillis()
 
         flow.collect { ev ->
             when (ev) {
@@ -251,7 +265,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     val id = artifactId ?: UUID.randomUUID().toString()
                     artifactId = id
                     val title = prompt.trim().take(48).ifBlank { "Generated project" }
-                    val art = Artifact(id, title, ev.files, System.currentTimeMillis())
+                    val existing = _artifacts.value.firstOrNull { it.id == id }
+                    val art = Artifact(
+                        id, title, ev.files, existing?.createdAt ?: System.currentTimeMillis(),
+                        pinned = existing?.pinned ?: false,
+                    )
                     _artifacts.value = _artifacts.value.filterNot { it.id == id } + art
                     _activeArtifactId.value = id
                     updateMessage(convId, msgId) { it.copy(artifactId = id) }
@@ -262,6 +280,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     if (body.isEmpty() && ev.files.isNotEmpty()) {
                         updateMessage(convId, msgId) {
                             it.copy(content = "Done — ${ev.files.size} file(s) ready. Open the project to view, export, or build it.")
+                        }
+                    }
+                    artifactId?.let { id ->
+                        val elapsed = System.currentTimeMillis() - startedAt
+                        _artifacts.value = _artifacts.value.map {
+                            if (it.id == id) it.copy(buildMs = elapsed, auditRounds = _settings.value.maxAuditLoops) else it
                         }
                     }
                     persistArtifacts()
@@ -285,6 +309,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteArtifact(id: String) {
         _artifacts.value = _artifacts.value.filterNot { it.id == id }
         if (_activeArtifactId.value == id) _activeArtifactId.value = null
+        persistArtifacts()
+    }
+
+    fun togglePin(id: String) {
+        _artifacts.value = _artifacts.value.map { if (it.id == id) it.copy(pinned = !it.pinned) else it }
         persistArtifacts()
     }
 
@@ -407,7 +436,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 runTerminalAgent(goal, _settings.value, files, onConfirmRead = { path ->
-                    askPermission("read", "Let ChomuGirI read \"$path\" on your machine?")
+                    askPermission("read", "Let ChomuGiri read \"$path\" on your machine?")
                 }).collect { ev ->
                     when (ev) {
                         is PipelineEvent.Step -> appendAgentLog("\n• ${ev.text}")

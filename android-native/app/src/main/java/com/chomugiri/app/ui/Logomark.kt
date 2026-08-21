@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.chomugiri.app.R
 
 /**
- * The one place the ChomuGirI brand mark is drawn. Every screen that shows "this is ChomuGirI"
+ * The one place the ChomuGiri brand mark is drawn. Every screen that shows "this is ChomuGiri"
  * calls this — never a generic Material icon — so the identity is consistent everywhere instead
  * of looking like an unbranded default AI icon.
  */
@@ -20,7 +20,7 @@ import com.chomugiri.app.R
 fun Logomark(size: Dp = 40.dp, modifier: Modifier = Modifier) {
     Image(
         painter = painterResource(R.drawable.logo),
-        contentDescription = "ChomuGirI",
+        contentDescription = "ChomuGiri",
         modifier = modifier.size(size).clip(RoundedCornerShape(size * 0.28f)),
     )
 }

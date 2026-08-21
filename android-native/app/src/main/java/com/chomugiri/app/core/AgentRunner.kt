@@ -59,7 +59,7 @@ fun runTerminalAgent(
         return@flow
     }
     if (!settings.agentTerminalEnabled) {
-        emit(PipelineEvent.Failed("Agent terminal access is off. Turn it on in Settings to let ChomuGirI run commands."))
+        emit(PipelineEvent.Failed("Agent terminal access is off. Turn it on in Settings to let ChomuGiri run commands."))
         return@flow
     }
 

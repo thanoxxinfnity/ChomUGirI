@@ -9,7 +9,7 @@ const val FILE_FORMAT_INSTRUCTIONS = """Output format rules (follow exactly):
 - Never use "..." or "// rest of the code" or any placeholder — always output the COMPLETE file content.
 - You may write a short prose summary before the file blocks, but the file blocks themselves must contain only code."""
 
-const val KIMI_SYSTEM_PROMPT = """You are Kimi K3, the main coder in ChomuGirI's AI swarm. You read the user's request and write
+const val KIMI_SYSTEM_PROMPT = """You are Kimi K3, the main coder in ChomuGiri's AI swarm. You read the user's request and write
 the complete, working source code for it — every file the project needs, fully implemented,
 no incomplete code, no TODOs, no placeholders.
 
@@ -61,7 +61,7 @@ Respond with ONLY a JSON object, no prose:
 }
 "fixedFiles" should be an empty array when "safe" is true and nothing needed changing."""
 
-const val FAST_CHAT_SYSTEM_PROMPT = """You are ChomuGirI, a friendly and fast assistant. Reply naturally and concisely in the same
+const val FAST_CHAT_SYSTEM_PROMPT = """You are ChomuGiri, a friendly and fast assistant. Reply naturally and concisely in the same
 language/style the user writes in (Hindi/Urdu/Roman Urdu/English mix is fine). You handle
 casual conversation and quick questions. You do not write full applications yourself — if the
 user actually wants an app/website/script built right now, the platform automatically hands
@@ -97,7 +97,7 @@ Hard rules:
  * The agent that is allowed to drive the user's own terminal. Kept deliberately narrow: it emits
  * one shell command at a time and must decide when the job is finished.
  */
-const val TERMINAL_AGENT_PROMPT = """You are ChomuGirI's build agent. You control a real Linux shell on the user's own machine,
+const val TERMINAL_AGENT_PROMPT = """You are ChomuGiri's build agent. You control a real Linux shell on the user's own machine,
 one command at a time, and you can see each command's real output.
 
 Respond with ONLY a JSON object, no prose:

@@ -24,17 +24,38 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
     val settings by vm.settings.collectAsState()
     var quickKey by remember { mutableStateOf("") }
 
-    Column(Modifier.fillMaxSize().background(BgDark)) {
+    val bg by androidx.compose.animation.animateColorAsState(BgDark, androidx.compose.animation.core.tween(200), label = "bg")
+    Column(Modifier.fillMaxSize().background(bg)) {
         TopAppBar(
             title = { Text("Settings") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = BgDark),
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = bg),
         )
 
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(16.dp).navigationBarsPadding().imePadding(),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            Section("Appearance") {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf("dark" to "Dark", "light" to "Light").forEach { (mode, label) ->
+                        val selected = settings.themeMode == mode
+                        FilterChip(
+                            selected = selected,
+                            onClick = { vm.updateSettings { it.copy(themeMode = mode) } },
+                            label = { Text(label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Accent.copy(alpha = 0.22f),
+                                containerColor = BgElevated2,
+                            ),
+                        )
+                    }
+                }
+            }
+
             Section("API keys") {
                 Text(
                     "Your keys are stored only on this device and are sent straight to the provider " +
@@ -131,7 +152,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Let ChomuGirI run commands", style = MaterialTheme.typography.bodyMedium)
+                        Text("Let ChomuGiri run commands", style = MaterialTheme.typography.bodyMedium)
                         Text(
                             "Off means only you can type. On means the AI can run real commands " +
                                 "on your machine — that is what makes the APK build work.",

@@ -23,12 +23,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.VpnKey
@@ -40,6 +43,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,6 +53,7 @@ import androidx.compose.ui.window.Dialog
 import com.chomugiri.app.core.Artifact
 import com.chomugiri.app.core.Message
 import com.chomugiri.app.data.AppViewModel
+import kotlinx.coroutines.delay
 
 @Composable
 fun ChatScreen(
@@ -57,7 +63,8 @@ fun ChatScreen(
 ) {
     val conversations by vm.conversations.collectAsState()
     val activeId by vm.activeConversationId.collectAsState()
-    val busy by vm.busy.collectAsState()
+    val busyConversations by vm.busyConversations.collectAsState()
+    val busy = activeId != null && activeId in busyConversations
     val settings by vm.settings.collectAsState()
     val artifacts by vm.artifacts.collectAsState()
 
@@ -97,7 +104,7 @@ fun ChatScreen(
             onSend = { text, forceResearch ->
                 vm.send(text, if (forceResearch) com.chomugiri.app.core.Intent.RESEARCH else null)
             },
-            onStop = { vm.stop() },
+            onStop = { activeId?.let { vm.stop(it) } },
             latestArtifact = artifacts.maxByOrNull { it.createdAt },
             onOpenCanvas = onOpenArtifact,
             auditLoops = settings.maxAuditLoops,
@@ -119,17 +126,27 @@ private fun MessageRow(msg: Message, artifacts: List<Artifact>, onOpenArtifact: 
         }
 
         if (msg.content.isNotBlank()) {
-            SelectionContainer {
-                Surface(
-                    color = if (isUser) Accent.copy(alpha = 0.16f) else BgElevated,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.widthIn(max = 560.dp),
-                ) {
-                    Text(
-                        msg.content,
-                        Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+            Column(
+                Modifier.widthIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+            ) {
+                parseMessageParts(msg.content).forEach { part ->
+                    when (part) {
+                        is MessagePart.Code -> CodeBlock(part.lang, part.code)
+                        is MessagePart.Prose -> SelectionContainer {
+                            Surface(
+                                color = if (isUser) Accent.copy(alpha = 0.16f) else BgElevated,
+                                shape = RoundedCornerShape(16.dp),
+                            ) {
+                                Text(
+                                    part.text.trim(),
+                                    Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         } else if (!isUser && msg.streaming && msg.steps.isEmpty()) {
@@ -155,6 +172,91 @@ private fun MessageRow(msg: Message, artifacts: List<Artifact>, onOpenArtifact: 
                     Icon(Icons.Default.ErrorOutline, null, tint = Danger, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(it, color = Danger, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Message content: prose vs. fenced code blocks, each rendered distinctly
+// ---------------------------------------------------------------------------------------------
+
+private sealed class MessagePart {
+    data class Prose(val text: String) : MessagePart()
+    data class Code(val lang: String, val code: String) : MessagePart()
+}
+
+private val CODE_FENCE = Regex("```([a-zA-Z0-9_+-]*)\\n?([\\s\\S]*?)```")
+
+private fun parseMessageParts(content: String): List<MessagePart> {
+    val parts = mutableListOf<MessagePart>()
+    var last = 0
+    for (m in CODE_FENCE.findAll(content)) {
+        if (m.range.first > last) {
+            val prose = content.substring(last, m.range.first)
+            if (prose.isNotBlank()) parts += MessagePart.Prose(prose)
+        }
+        parts += MessagePart.Code(m.groupValues[1], m.groupValues[2].trim('\n'))
+        last = m.range.last + 1
+    }
+    if (last < content.length) {
+        val prose = content.substring(last)
+        if (prose.isNotBlank()) parts += MessagePart.Prose(prose)
+    }
+    if (parts.isEmpty() && content.isNotBlank()) parts += MessagePart.Prose(content)
+    return parts
+}
+
+/**
+ * A code block always keeps this dark, terminal-style look regardless of the app's light/dark
+ * theme — the same way code blocks stay dark in most chat UIs even on a light page.
+ */
+@Composable
+private fun CodeBlock(lang: String, code: String) {
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(code) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1400)
+            copied = false
+        }
+    }
+
+    Surface(
+        color = Color(0xFF121216),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF26262F), RoundedCornerShape(12.dp)),
+    ) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    lang.ifBlank { "code" },
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF8D8B9C),
+                )
+                IconButton(
+                    onClick = { clipboard.setText(AnnotatedString(code)); copied = true },
+                    modifier = Modifier.size(30.dp),
+                ) {
+                    Icon(
+                        if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                        "Copy code",
+                        tint = if (copied) Color(0xFF5FD9A4) else Color(0xFF8D8B9C),
+                        modifier = Modifier.size(15.dp),
+                    )
+                }
+            }
+            HorizontalDivider(color = Color(0xFF26262F))
+            SelectionContainer {
+                Box(Modifier.horizontalScroll(rememberScrollState()).padding(12.dp)) {
+                    Text(highlightAnnotated(code), style = MonoStyle, color = Color(0xFFE6E4F0))
                 }
             }
         }
@@ -187,13 +289,27 @@ private fun ArtifactCard(artifact: Artifact, onOpen: () -> Unit) {
 }
 
 /** Collapsed by default; the full step log opens in a dialog rather than cluttering the thread. */
+/** Cycles "." -> ".." -> "..." -> "" while genuinely still waiting on a real step. */
+@Composable
+private fun animatedDots(): String {
+    var n by remember { mutableStateOf(1) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(450)
+            n = (n % 3) + 1
+        }
+    }
+    return ".".repeat(n)
+}
+
 @Composable
 private fun ThinkingBubble(msg: Message) {
     var open by remember { mutableStateOf(false) }
     val active = msg.streaming && msg.error == null
+    val dots = if (active) animatedDots() else ""
     val label = when {
         msg.error != null -> "Build failed — tap for details"
-        active -> msg.steps.lastOrNull()?.text ?: "Thinking..."
+        active -> (msg.steps.lastOrNull()?.text ?: "Thinking").trimEnd('.') + dots
         else -> "Thought for a moment"
     }
 
@@ -213,7 +329,7 @@ private fun ThinkingBubble(msg: Message) {
             Icon(
                 when {
                     msg.error != null -> Icons.Default.ErrorOutline
-                    active -> Icons.Default.AutoAwesome
+                    active -> Icons.Default.Psychology
                     else -> Icons.Default.CheckCircle
                 },
                 null,
@@ -238,7 +354,7 @@ private fun ThinkingBubble(msg: Message) {
             Surface(color = BgElevated, shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.padding(18.dp).widthIn(max = 460.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AutoAwesome, null, tint = Accent, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Psychology, null, tint = Accent, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Thinking", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                         IconButton(onClick = { open = false }, modifier = Modifier.size(28.dp)) {
@@ -253,13 +369,13 @@ private fun ThinkingBubble(msg: Message) {
                         msg.steps.forEach { step ->
                             Row(verticalAlignment = Alignment.Top) {
                                 Icon(
-                                    if (step.done) Icons.Default.CheckCircle else Icons.Default.AutoAwesome,
+                                    if (step.done) Icons.Default.CheckCircle else Icons.Default.Psychology,
                                     null,
                                     tint = if (step.done) Success else Accent,
                                     modifier = Modifier.size(13.dp).padding(top = 2.dp),
                                 )
                                 Spacer(Modifier.width(9.dp))
-                                Text(step.text, style = MonoStyle, color = if (step.done) FgMuted else Color.White)
+                                Text(step.text, style = MonoStyle, color = if (step.done) FgMuted else FgPrimary)
                             }
                         }
                         msg.error?.let {
@@ -287,7 +403,7 @@ fun ShimmerText(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodySmall,
-        color = Color.White.copy(alpha = alpha),
+        color = FgPrimary.copy(alpha = alpha),
         modifier = Modifier.alpha(alpha),
     )
 }
@@ -323,7 +439,7 @@ private fun EmptyState(
     ) {
         Logomark(size = 56.dp)
         Spacer(Modifier.height(18.dp))
-        Text("ChomuGirI", style = MaterialTheme.typography.titleLarge)
+        Text("ChomuGiri", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
         Text(
             "Just talk and you get a fast reply. Ask for an app, site, or script and the full " +
@@ -380,7 +496,7 @@ private fun EmptyState(
                         .border(1.dp, BorderCol, RoundedCornerShape(12.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    Text(label, style = MonoStyle, color = Color.White, fontSize = 11.sp)
+                    Text(label, style = MonoStyle, color = FgPrimary, fontSize = 11.sp)
                     Text(note, style = MaterialTheme.typography.labelSmall, color = FgMuted, fontSize = 10.sp)
                 }
                 if (i < ROUTER_STAGES.lastIndex) {
@@ -411,7 +527,7 @@ private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Uni
                     prompt,
                     Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (hasApiKey) Color.White else FgMuted,
+                    color = if (hasApiKey) FgPrimary else FgMuted,
                 )
             }
         }
@@ -449,7 +565,19 @@ private fun Composer(
         }
     }
 
-    Surface(color = BgDark) {
+    val speechLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val spoken = result.data
+            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!spoken.isNullOrBlank()) {
+            text = if (text.isBlank()) spoken else "$text $spoken"
+        }
+    }
+
+    val composerBg by androidx.compose.animation.animateColorAsState(BgDark, androidx.compose.animation.core.tween(200), label = "bg")
+    Surface(color = composerBg) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -480,7 +608,7 @@ private fun Composer(
                             tier.label,
                             Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             style = MonoStyle,
-                            color = if (selected) Color.White else FgMuted,
+                            color = if (selected) FgPrimary else FgMuted,
                         )
                     }
                 }
@@ -565,7 +693,7 @@ private fun Composer(
                     value = text,
                     onValueChange = { text = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message ChomuGirI...", color = FgMuted) },
+                    placeholder = { Text("Message ChomuGiri...", color = FgMuted) },
                     shape = RoundedCornerShape(22.dp),
                     maxLines = 5,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -575,7 +703,27 @@ private fun Composer(
                         unfocusedContainerColor = BgElevated,
                     ),
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = {
+                        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(
+                                android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                            )
+                            putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Speak now")
+                        }
+                        try {
+                            speechLauncher.launch(intent)
+                        } catch (e: android.content.ActivityNotFoundException) {
+                            android.widget.Toast.makeText(context, "Voice input isn't available on this device.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(Icons.Default.Mic, "Voice input", tint = FgMuted)
+                }
+                Spacer(Modifier.width(4.dp))
                 FilledIconButton(
                     onClick = {
                         if (busy) onStop() else {

@@ -47,6 +47,8 @@ data class AppSettings(
     val searchApiKey: String = "",
     /** Used only when the user taps Deploy on a project. Never bundled with the app. */
     val vercelToken: String = "",
+    /** "dark" or "light" — user-controlled in Settings, dark by default. */
+    val themeMode: String = "dark",
 ) {
     fun provider(role: RoleKey): ProviderConfig =
         providers[role.name] ?: ProviderConfig(model = defaultModelFor(role))
@@ -96,6 +98,10 @@ data class Artifact(
     val title: String,
     val files: List<GeneratedFile>,
     val createdAt: Long,
+    val pinned: Boolean = false,
+    /** Wall-clock time the pipeline took to produce this, in ms — null for hand-added projects. */
+    val buildMs: Long? = null,
+    val auditRounds: Int? = null,
 )
 
 @Serializable
@@ -122,6 +128,18 @@ data class Conversation(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )
+
+/** Renders a conversation as plain markdown, for sharing/exporting outside the app. */
+fun conversationToMarkdown(conversation: Conversation): String = buildString {
+    appendLine("# ${conversation.title}")
+    appendLine()
+    conversation.messages.forEach { m ->
+        appendLine(if (m.role == "user") "**You:**" else "**ChomuGiri:**")
+        appendLine()
+        appendLine(m.content.ifBlank { "_(no text — see the app for any generated files)_" })
+        appendLine()
+    }
+}
 
 /** Progress emitted by the swarm pipeline as it runs. */
 sealed class PipelineEvent {

@@ -51,7 +51,8 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
     var renamingProject by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val generating by vm.busy.collectAsState()
+    val busyConversations by vm.busyConversations.collectAsState()
+    val generating = busyConversations.isNotEmpty()
     val deployStates by vm.deployState.collectAsState()
     val deployState = deployStates[artifact.id]
     val deployDisabled = generating || deployState is DeployUiState.Deploying
@@ -251,7 +252,7 @@ private fun FileTree(
                     row.name,
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (row.isFile && row.fullPath == selectedPath) Color.White else FgMuted,
+                    color = if (row.isFile && row.fullPath == selectedPath) FgPrimary else FgMuted,
                     maxLines = 1,
                 )
                 if (row.isFile && row.fullPath == regenerating) {
@@ -391,7 +392,7 @@ private fun CodeEditor(code: String, onChange: (String) -> Unit, modifier: Modif
     }
 }
 
-private val tokenColors = mapOf(
+internal val tokenColors = mapOf(
     TokenKind.KEYWORD to Color(0xFF7C5CFF),
     TokenKind.STRING to Color(0xFF5FD9A4),
     TokenKind.COMMENT to Color(0xFF6B6980),
@@ -399,7 +400,7 @@ private val tokenColors = mapOf(
     TokenKind.TAG to Color(0xFF8AB4FF),
 )
 
-private fun highlightAnnotated(code: String): AnnotatedString = buildAnnotatedString {
+internal fun highlightAnnotated(code: String): AnnotatedString = buildAnnotatedString {
     append(code)
     highlightSpans(code).forEach { span ->
         tokenColors[span.kind]?.let { color ->
@@ -501,7 +502,7 @@ private fun ApkView(vm: AppViewModel, artifact: Artifact) {
         Text(
             "An Android app cannot compile an APK inside itself — there is no JDK, Gradle or " +
                 "Android SDK in an app sandbox. So this runs the build on your own machine, " +
-                "through the terminal you connected. ChomuGirI copies the project over, then " +
+                "through the terminal you connected. ChomuGiri copies the project over, then " +
                 "runs the build commands there and shows you the real output.",
             style = MaterialTheme.typography.bodyMedium,
             color = FgMuted,

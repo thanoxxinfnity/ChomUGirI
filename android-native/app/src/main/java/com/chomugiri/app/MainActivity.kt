@@ -5,8 +5,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.chomugiri.app.data.AppViewModel
 import com.chomugiri.app.ui.AppRoot
@@ -21,8 +25,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            ChomuGirITheme {
-                Surface(Modifier.fillMaxSize(), color = BgDark) {
+            val settings by vm.settings.collectAsState()
+            ChomuGirITheme(darkTheme = settings.themeMode != "light") {
+                // A plain color swap on theme toggle is jarring — cross-fade it instead.
+                val bg by animateColorAsState(BgDark, tween(200), label = "bg")
+                Surface(Modifier.fillMaxSize(), color = bg) {
                     AppRoot(vm)
                 }
             }
