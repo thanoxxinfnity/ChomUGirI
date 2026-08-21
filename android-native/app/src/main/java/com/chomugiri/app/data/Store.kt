@@ -10,6 +10,7 @@ import com.chomugiri.app.core.AppSettings
 import com.chomugiri.app.core.Artifact
 import com.chomugiri.app.core.Conversation
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -29,11 +30,14 @@ val AppJson = Json {
 
 class Store(private val context: Context) {
 
+    // Every stream below falls back to an empty/default value on a read failure (a corrupted
+    // preferences file, a disk I/O error) instead of throwing — an uncaught exception here would
+    // otherwise crash the whole app on every single launch, since this collects from init{}.
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         prefs[KEY_SETTINGS]?.let {
             runCatching { AppJson.decodeFromString(AppSettings.serializer(), it) }.getOrNull()
         } ?: AppSettings()
-    }
+    }.catch { emit(AppSettings()) }
 
     val conversations: Flow<List<Conversation>> = context.dataStore.data.map { prefs ->
         prefs[KEY_CONVERSATIONS]?.let {
@@ -41,7 +45,7 @@ class Store(private val context: Context) {
                 AppJson.decodeFromString(ListSerializer(Conversation.serializer()), it)
             }.getOrNull()
         } ?: emptyList()
-    }
+    }.catch { emit(emptyList()) }
 
     val artifacts: Flow<List<Artifact>> = context.dataStore.data.map { prefs ->
         prefs[KEY_ARTIFACTS]?.let {
@@ -49,7 +53,7 @@ class Store(private val context: Context) {
                 AppJson.decodeFromString(ListSerializer(Artifact.serializer()), it)
             }.getOrNull()
         } ?: emptyList()
-    }
+    }.catch { emit(emptyList()) }
 
     suspend fun saveSettings(s: AppSettings) {
         context.dataStore.edit { it[KEY_SETTINGS] = AppJson.encodeToString(AppSettings.serializer(), s) }

@@ -161,9 +161,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun renameConversation(convId: String, title: String) =
         mutateConversation(convId) { it.copy(title = title) }
 
+    /** Forks a chat at a given message into a brand-new conversation, keeping history up to it. */
+    fun branchConversation(convId: String, uptoMessageId: String): String? {
+        val source = _conversations.value.firstOrNull { it.id == convId } ?: return null
+        val cut = source.messages.indexOfFirst { it.id == uptoMessageId }
+        if (cut < 0) return null
+        val kept = source.messages.subList(0, cut + 1).map { it.copy(id = UUID.randomUUID().toString()) }
+        val newId = UUID.randomUUID().toString()
+        val branch = Conversation(id = newId, title = "${source.title} (branch)", messages = kept)
+        _conversations.value = _conversations.value + branch
+        _activeConversationId.value = newId
+        persistConversations()
+        return newId
+    }
+
     // ---------- the one entry point the UI calls ----------
 
-    fun send(text: String, forcedIntent: Intent? = null) {
+    /**
+     * @param forcedRole Power-user override (long-press send): skip the router entirely and let
+     * this one message go straight to the given role as a direct chat call.
+     */
+    fun send(text: String, forcedIntent: Intent? = null, forcedRole: RoleKey? = null) {
         if (text.isBlank()) return
         // Only refuse if THIS conversation already has a job running — a different, idle
         // conversation must stay free to send while another one is mid-pipeline.
@@ -174,25 +192,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         addMessage(convId, Message(id = UUID.randomUUID().toString(), role = "user", content = text))
 
         val assistantId = UUID.randomUUID().toString()
-        val intent = forcedIntent ?: classifyIntent(text)
-        addMessage(
-            convId,
-            Message(
-                id = assistantId,
-                role = "assistant",
-                kind = when (intent) {
-                    Intent.CHAT -> "chat"
-                    Intent.PIPELINE -> "pipeline"
-                    Intent.RESEARCH -> "research"
-                },
-                streaming = true,
-            ),
-        )
+        // Placeholder — its real kind/modelUsed land once the AI triage call below actually
+        // decides. Renders as a plain "Thinking..." shimmer in the meantime.
+        addMessage(convId, Message(id = assistantId, role = "assistant", streaming = true))
 
         val job = viewModelScope.launch {
             try {
+                // The router is a real AI decision (the Fast Chat role), not a keyword list — that
+                // is what stops "what's the capital of France" from ever waking the coding swarm.
+                val intent = if (forcedRole != null) Intent.CHAT else (forcedIntent ?: classifyIntentAi(text, s))
+                updateMessage(convId, assistantId) {
+                    it.copy(
+                        kind = when (intent) {
+                            Intent.CHAT -> "chat"
+                            Intent.PIPELINE -> "pipeline"
+                            Intent.RESEARCH -> "research"
+                        },
+                        modelUsed = when {
+                            forcedRole != null -> ROLE_LABELS[forcedRole]
+                            intent == Intent.CHAT -> ROLE_LABELS[RoleKey.FAST]
+                            intent == Intent.RESEARCH -> "Deep Research"
+                            else -> null
+                        },
+                    )
+                }
                 when (intent) {
-                    Intent.CHAT -> runFastChat(convId, assistantId, text, s)
+                    Intent.CHAT -> runFastChat(convId, assistantId, text, s, forcedRole ?: RoleKey.FAST)
                     Intent.PIPELINE -> consume(convId, assistantId, runPipeline(text, s), text)
                     Intent.RESEARCH -> consume(convId, assistantId, runDeepResearch(text, s), text)
                 }
@@ -219,15 +244,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _busyConversations.value = jobs.keys.toSet()
     }
 
-    private suspend fun runFastChat(convId: String, msgId: String, text: String, s: AppSettings) {
+    private suspend fun runFastChat(convId: String, msgId: String, text: String, s: AppSettings, role: RoleKey = RoleKey.FAST) {
         val history = (activeConversation?.messages ?: emptyList())
             .filter { it.kind == "chat" && it.content.isNotBlank() && it.id != msgId }
             .takeLast(10)
             .map { ChatTurn(it.role, it.content) }
 
-        val turns = listOf(ChatTurn("system", FAST_CHAT_SYSTEM_PROMPT)) + history + ChatTurn("user", text)
+        val systemPrompt = if (role == RoleKey.FAST) FAST_CHAT_SYSTEM_PROMPT else
+            "You are ${ROLE_LABELS[role]}, answering directly because the user picked you specifically for this message. Reply naturally and helpfully."
+        val turns = listOf(ChatTurn("system", systemPrompt)) + history + ChatTurn("user", text)
         val sb = StringBuilder()
-        LlmClient.stream(s.provider(RoleKey.FAST), "Fast chat", turns, temperature = 0.6, maxTokens = 2048)
+        LlmClient.stream(s.provider(role), ROLE_LABELS[role] ?: role.name, turns, temperature = 0.6, maxTokens = 2048)
             .collect { chunk ->
                 sb.append(chunk)
                 updateMessage(convId, msgId) { it.copy(content = sb.toString()) }
@@ -285,7 +312,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     artifactId?.let { id ->
                         val elapsed = System.currentTimeMillis() - startedAt
                         _artifacts.value = _artifacts.value.map {
-                            if (it.id == id) it.copy(buildMs = elapsed, auditRounds = _settings.value.maxAuditLoops) else it
+                            if (it.id == id) it.copy(
+                                buildMs = elapsed,
+                                auditRounds = _settings.value.maxAuditLoops,
+                                resolvedBy = ev.resolvedBy.ifBlank { null } ?: it.resolvedBy,
+                                lastAuditIssues = ev.auditIssues.ifEmpty { it.lastAuditIssues },
+                            ) else it
                         }
                     }
                     persistArtifacts()
@@ -321,6 +353,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (title.isBlank()) return
         _artifacts.value = _artifacts.value.map { if (it.id == id) it.copy(title = title.trim()) else it }
         persistArtifacts()
+    }
+
+    /** Clones a project as a brand-new, independent one — safe to experiment on without touching the original. */
+    fun duplicateArtifact(id: String): String? {
+        val source = _artifacts.value.firstOrNull { it.id == id } ?: return null
+        val newId = UUID.randomUUID().toString()
+        val copy = source.copy(
+            id = newId,
+            title = "${source.title} (copy)",
+            createdAt = System.currentTimeMillis(),
+            pinned = false,
+            buildAttempts = emptyList(),
+        )
+        _artifacts.value = _artifacts.value + copy
+        persistArtifacts()
+        return newId
     }
 
     private fun mutateFiles(artifactId: String, block: (List<GeneratedFile>) -> List<GeneratedFile>) {
@@ -405,15 +453,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun startAutoConnect() {
         if (autoConnectJob?.isActive == true) return
         autoConnectJob = viewModelScope.launch {
-            var delayMs = 4_000L
-            repeat(20) {
-                if (TerminalClient.connected.value) return@launch
-                val s = _settings.value
-                if (!s.autoConnectTerminal || s.terminalUrl.isBlank()) return@launch
-                TerminalClient.connect(s.terminalUrl, s.terminalAuthToken)
-                delay(delayMs)
-                if (TerminalClient.connected.value) return@launch
-                delayMs = (delayMs * 2).coerceAtMost(60_000L)
+            try {
+                var delayMs = 4_000L
+                repeat(20) {
+                    if (TerminalClient.connected.value) return@launch
+                    val s = _settings.value
+                    if (!s.autoConnectTerminal || s.terminalUrl.isBlank()) return@launch
+                    TerminalClient.connect(s.terminalUrl, s.terminalAuthToken)
+                    delay(delayMs)
+                    if (TerminalClient.connected.value) return@launch
+                    delayMs = (delayMs * 2).coerceAtMost(60_000L)
+                }
+            } catch (e: Exception) {
+                // Best-effort background retry — a failure here must never take the app down.
             }
         }
     }
@@ -422,10 +474,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnectTerminal() = TerminalClient.disconnect()
 
-    fun runAgent(goal: String, files: List<GeneratedFile>, requiresConfirmation: Boolean = false) {
+    fun runAgent(
+        goal: String,
+        files: List<GeneratedFile>,
+        requiresConfirmation: Boolean = false,
+        artifactId: String? = null,
+        envVars: Map<String, String> = emptyMap(),
+    ) {
         if (_agentRunning.value) return
         _agentRunning.value = true
         _agentLog.value = ""
+        var succeeded = false
+        var lastLine = ""
         viewModelScope.launch {
             try {
                 if (requiresConfirmation) {
@@ -435,27 +495,44 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         return@launch
                     }
                 }
-                runTerminalAgent(goal, _settings.value, files, onConfirmRead = { path ->
-                    askPermission("read", "Let ChomuGiri read \"$path\" on your machine?")
-                }).collect { ev ->
+                runTerminalAgent(
+                    goal, _settings.value, files,
+                    onConfirmRead = { path -> askPermission("read", "Let ChomuGiri read \"$path\" on your machine?") },
+                    envVars = envVars,
+                ).collect { ev ->
                     when (ev) {
-                        is PipelineEvent.Step -> appendAgentLog("\n• ${ev.text}")
+                        is PipelineEvent.Step -> { appendAgentLog("\n• ${ev.text}"); lastLine = ev.text }
                         is PipelineEvent.Chunk -> appendAgentLog(ev.text)
-                        is PipelineEvent.Failed -> appendAgentLog("\n\n[!] ${ev.message}")
-                        is PipelineEvent.Done -> appendAgentLog("\n\n[done]")
+                        is PipelineEvent.Failed -> { appendAgentLog("\n\n[!] ${ev.message}"); lastLine = ev.message }
+                        is PipelineEvent.Done -> { appendAgentLog("\n\n[done]"); succeeded = true }
                         else -> Unit
                     }
                 }
             } catch (e: Exception) {
-                appendAgentLog("\n\n[!] ${e.message}")
+                lastLine = e.message ?: "Unknown error"
+                appendAgentLog("\n\n[!] $lastLine")
             } finally {
                 _agentRunning.value = false
+                artifactId?.let { id ->
+                    val attempt = BuildAttempt(System.currentTimeMillis(), succeeded, lastLine.take(200))
+                    _artifacts.value = _artifacts.value.map {
+                        if (it.id == id) it.copy(buildAttempts = (it.buildAttempts + attempt).takeLast(20)) else it
+                    }
+                    persistArtifacts()
+                }
             }
         }
     }
 
-    fun buildApkFromArtifact(artifact: Artifact) =
-        runAgent(apkBuildGoal(artifact.title), artifact.files, requiresConfirmation = true)
+    fun buildApkFromArtifact(artifact: Artifact) = runAgent(
+        apkBuildGoal(artifact.title), artifact.files,
+        requiresConfirmation = true, artifactId = artifact.id, envVars = artifact.envVars,
+    )
+
+    fun updateEnvVars(artifactId: String, vars: Map<String, String>) {
+        _artifacts.value = _artifacts.value.map { if (it.id == artifactId) it.copy(envVars = vars) else it }
+        persistArtifacts()
+    }
 
     // ---------- deploy ----------
 

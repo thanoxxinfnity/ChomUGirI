@@ -1,5 +1,7 @@
 package com.chomugiri.app.core
 
+import com.chomugiri.app.net.LlmClient
+
 enum class Intent { CHAT, PIPELINE, RESEARCH }
 
 private val CODE_KEYWORDS = listOf(
@@ -37,11 +39,16 @@ private val DISCUSSION_PHRASES = listOf(
     "what do you think", "before we build", "before building",
 )
 
+/** Matches a keyword as a whole word/phrase, not as a substring — "api" must not match inside "capital". */
+private fun containsKeyword(text: String, keyword: String): Boolean {
+    val escaped = Regex.escape(keyword.trim())
+    return Regex("(?<![a-z0-9])$escaped(?![a-z0-9])").containsMatchIn(text)
+}
+
 /**
- * The only routing signal in the app — there is no manual mode switch. Trivial chat never wakes
- * the heavy swarm; an explicit research ask goes to Deep Research; anything that describes
- * something to build goes to the pipeline; talking through an idea stays chat so the fast model
- * can actually ask what the user wants, instead of the swarm silently starting to write files.
+ * Local, offline fallback only — used when the AI triage call itself fails (no key, no network).
+ * Real routing normally goes through [classifyIntentAi] below; this heuristic is deliberately
+ * conservative and word-boundary-aware so a word like "capital" can never match the "api" keyword.
  */
 fun classifyIntent(message: String): Intent {
     val trimmed = message.trim()
@@ -53,10 +60,52 @@ fun classifyIntent(message: String): Intent {
     if (DISCUSSION_PHRASES.any { lower.contains(it) }) return Intent.CHAT
 
     // Research wins over code only when it is clearly an information ask, not a build ask.
-    val hasCodeKeyword = CODE_KEYWORDS.any { lower.contains(it) }
-    val hasResearchKeyword = RESEARCH_KEYWORDS.any { lower.contains(it) }
+    val hasCodeKeyword = CODE_KEYWORDS.any { containsKeyword(lower, it) }
+    val hasResearchKeyword = RESEARCH_KEYWORDS.any { containsKeyword(lower, it) }
     if (hasResearchKeyword && !hasCodeKeyword) return Intent.RESEARCH
 
     if (hasCodeKeyword || trimmed.length > 180) return Intent.PIPELINE
     return Intent.CHAT
+}
+
+private const val TRIAGE_PROMPT = """You are a routing classifier for a coding assistant app. Read the user's message and answer with EXACTLY one word — no punctuation, no explanation:
+
+CHAT — casual conversation, greetings, opinions, or a question that just wants an answer (including general-knowledge questions like "what's the capital of France" or "explain closures in JS")
+PIPELINE — the user is asking, right now, to build/create/generate/fix an actual app, website, script, or program
+RESEARCH — the user is explicitly asking to look up or research current real-world information (news, prices, comparisons, "what's the latest...")
+
+If in doubt between CHAT and PIPELINE, prefer CHAT — only route to PIPELINE when the user clearly wants something built.
+
+Message: "%s"
+
+One word answer:"""
+
+/**
+ * The real routing signal: a single fast, cheap AI call (the Fast Chat role) reads the message
+ * and decides — not a keyword list. This is what actually understands "what's the capital of
+ * France" is a question, not a request to build something with an "API". Greetings still skip
+ * the network round-trip since there's nothing to decide there.
+ */
+suspend fun classifyIntentAi(message: String, settings: AppSettings): Intent {
+    val trimmed = message.trim()
+    if (trimmed.isEmpty()) return Intent.CHAT
+    if (trimmed.length < 40 && GREETING.containsMatchIn(trimmed)) return Intent.CHAT
+
+    return try {
+        val raw = LlmClient.complete(
+            settings.provider(RoleKey.FAST), "Router",
+            listOf(ChatTurn("user", TRIAGE_PROMPT.format(trimmed.take(500)))),
+            temperature = 0.0, maxTokens = 6,
+        ).trim().uppercase()
+        when {
+            raw.startsWith("PIPELINE") -> Intent.PIPELINE
+            raw.startsWith("RESEARCH") -> Intent.RESEARCH
+            raw.startsWith("CHAT") -> Intent.CHAT
+            else -> classifyIntent(trimmed)
+        }
+    } catch (e: Exception) {
+        // No key set, or the network call itself failed — fall back to the local heuristic
+        // rather than silently dropping the message.
+        classifyIntent(trimmed)
+    }
 }

@@ -49,6 +49,8 @@ data class AppSettings(
     val vercelToken: String = "",
     /** "dark" or "light" — user-controlled in Settings, dark by default. */
     val themeMode: String = "dark",
+    /** User-saved terminal commands, shown as tap-to-run chips on the Terminal tab. */
+    val terminalMacros: List<String> = emptyList(),
 ) {
     fun provider(role: RoleKey): ProviderConfig =
         providers[role.name] ?: ProviderConfig(model = defaultModelFor(role))
@@ -93,6 +95,13 @@ data class ChatTurn(val role: String, val content: String)
 data class GeneratedFile(val path: String, val content: String)
 
 @Serializable
+data class BuildAttempt(
+    val timestamp: Long,
+    val success: Boolean,
+    val summary: String,
+)
+
+@Serializable
 data class Artifact(
     val id: String,
     val title: String,
@@ -102,6 +111,13 @@ data class Artifact(
     /** Wall-clock time the pipeline took to produce this, in ms — null for hand-added projects. */
     val buildMs: Long? = null,
     val auditRounds: Int? = null,
+    /** Which swarm stage's output actually shipped — "Kimi K3" / "...+ GLM audit" / "DeepSeek R1 fallback" / etc. */
+    val resolvedBy: String? = null,
+    /** GLM's real findings from the last audit round that found something, kept after the chat log scrolls away. */
+    val lastAuditIssues: List<String> = emptyList(),
+    /** User-supplied, per-project env vars — exported into the shell before any terminal build command runs. */
+    val envVars: Map<String, String> = emptyMap(),
+    val buildAttempts: List<BuildAttempt> = emptyList(),
 )
 
 @Serializable
@@ -118,6 +134,8 @@ data class Message(
     val steps: List<ThinkingStep> = emptyList(),
     val streaming: Boolean = false,
     val error: String? = null,
+    /** Which model actually produced this reply — "Fast Chat", a forced role's label, or "Deep Research". */
+    val modelUsed: String? = null,
 )
 
 @Serializable
@@ -147,5 +165,10 @@ sealed class PipelineEvent {
     data class Files(val files: List<GeneratedFile>) : PipelineEvent()
     data class Chunk(val text: String) : PipelineEvent()
     data class Failed(val message: String) : PipelineEvent()
-    data class Done(val files: List<GeneratedFile>) : PipelineEvent()
+    data class Done(
+        val files: List<GeneratedFile>,
+        /** Which stage's output shipped — empty when not applicable (research, terminal agent). */
+        val resolvedBy: String = "",
+        val auditIssues: List<String> = emptyList(),
+    ) : PipelineEvent()
 }

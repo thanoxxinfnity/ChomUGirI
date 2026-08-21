@@ -1,6 +1,8 @@
 package com.chomugiri.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -8,7 +10,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +31,8 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     val screen by TerminalClient.screen.collectAsState()
 
     var input by remember { mutableStateOf("") }
+    var historyOpen by remember { mutableStateOf(false) }
+    val history by TerminalClient.commandHistory.collectAsState()
     val scroll = rememberScrollState()
 
     LaunchedEffect(screen.length) { scroll.animateScrollTo(scroll.maxValue) }
@@ -45,6 +51,19 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text("My Terminal", style = MaterialTheme.typography.titleMedium)
                 Text(status, style = MaterialTheme.typography.bodySmall, color = FgMuted, maxLines = 1)
+            }
+            Box {
+                IconButton(onClick = { historyOpen = true }, enabled = history.isNotEmpty()) {
+                    Icon(Icons.Default.History, "Command history", tint = if (history.isEmpty()) FgMuted.copy(alpha = 0.4f) else FgMuted, modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded = historyOpen, onDismissRequest = { historyOpen = false }) {
+                    history.forEach { cmd ->
+                        DropdownMenuItem(
+                            text = { Text(cmd, style = MonoStyle, maxLines = 1) },
+                            onClick = { input = cmd; historyOpen = false },
+                        )
+                    }
+                }
             }
             IconButton(onClick = { TerminalClient.clearScreen() }) {
                 Icon(Icons.Default.Delete, "Clear", tint = FgMuted, modifier = Modifier.size(18.dp))
@@ -114,6 +133,37 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
         }
 
         Column(Modifier.padding(12.dp).navigationBarsPadding().imePadding()) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                settings.terminalMacros.forEach { macro ->
+                    Surface(
+                        color = BgElevated, shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.clickable { input = macro },
+                    ) {
+                        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(macro, style = MonoStyle, color = Accent2, maxLines = 1)
+                            IconButton(
+                                onClick = { vm.updateSettings { it.copy(terminalMacros = it.terminalMacros - macro) } },
+                                modifier = Modifier.size(16.dp).padding(start = 6.dp),
+                            ) { Icon(Icons.Default.Delete, "Remove macro", tint = FgMuted, modifier = Modifier.size(12.dp)) }
+                        }
+                    }
+                }
+                Surface(
+                    color = BgElevated, shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.clickable(enabled = input.isNotBlank()) {
+                        vm.updateSettings { it.copy(terminalMacros = (it.terminalMacros + input).distinct()) }
+                    },
+                ) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Add, null, tint = FgMuted, modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Save as macro", style = MaterialTheme.typography.labelSmall, color = FgMuted)
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = input,
@@ -134,6 +184,7 @@ fun TerminalScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 FilledIconButton(
                     onClick = {
+                        TerminalClient.recordHistory(input)
                         TerminalClient.sendInput(input + "\n")
                         input = ""
                     },

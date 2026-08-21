@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -92,7 +93,9 @@ fun ChatScreen(
                 ) {
                     items(messages, key = { it.id }) { msg ->
                         Box(Modifier.animateItem()) {
-                            MessageRow(msg, artifacts, onOpenArtifact)
+                            MessageRow(msg, artifacts, onOpenArtifact) { msgId ->
+                                activeId?.let { vm.branchConversation(it, msgId) }
+                            }
                         }
                     }
                 }
@@ -109,12 +112,18 @@ fun ChatScreen(
             onOpenCanvas = onOpenArtifact,
             auditLoops = settings.maxAuditLoops,
             onAuditLoopsChange = { n -> vm.updateSettings { it.copy(maxAuditLoops = n) } },
+            onSendWithRole = { t, role -> vm.send(t, forcedRole = role) },
         )
     }
 }
 
 @Composable
-private fun MessageRow(msg: Message, artifacts: List<Artifact>, onOpenArtifact: (String) -> Unit) {
+private fun MessageRow(
+    msg: Message,
+    artifacts: List<Artifact>,
+    onOpenArtifact: (String) -> Unit,
+    onBranch: (String) -> Unit,
+) {
     val isUser = msg.role == "user"
     Column(
         Modifier.fillMaxWidth(),
@@ -151,6 +160,21 @@ private fun MessageRow(msg: Message, artifacts: List<Artifact>, onOpenArtifact: 
             }
         } else if (!isUser && msg.streaming && msg.steps.isEmpty()) {
             ShimmerText("Thinking...")
+        }
+
+        if (!isUser && !msg.streaming && msg.content.isNotBlank()) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                msg.modelUsed?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = FgMuted)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    "Branch from here",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FgMuted,
+                    modifier = Modifier.clickable { onBranch(msg.id) },
+                )
+            }
         }
 
         msg.artifactId?.let { id ->
@@ -534,6 +558,7 @@ private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Uni
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun Composer(
     busy: Boolean,
@@ -543,6 +568,7 @@ private fun Composer(
     onOpenCanvas: (String) -> Unit = {},
     auditLoops: Int = 2,
     onAuditLoopsChange: (Int) -> Unit = {},
+    onSendWithRole: (String, com.chomugiri.app.core.RoleKey) -> Unit = { _, _ -> },
 ) {
     var text by remember { mutableStateOf("") }
     var toolsOpen by remember { mutableStateOf(false) }
@@ -715,7 +741,9 @@ private fun Composer(
                         }
                         try {
                             speechLauncher.launch(intent)
-                        } catch (e: android.content.ActivityNotFoundException) {
+                        } catch (e: Exception) {
+                            // Covers no voice-input app (ActivityNotFoundException) and any other
+                            // launch failure alike — this must never crash the composer.
                             android.widget.Toast.makeText(context, "Voice input isn't available on this device.", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     },
@@ -724,26 +752,53 @@ private fun Composer(
                     Icon(Icons.Default.Mic, "Voice input", tint = FgMuted)
                 }
                 Spacer(Modifier.width(4.dp))
-                FilledIconButton(
-                    onClick = {
-                        if (busy) onStop() else {
-                            val t = text.trim()
-                            if (t.isNotEmpty()) {
-                                onSend(t, researchMode)
-                                text = ""
-                                researchMode = false
-                                attachedName = null
-                            }
+                var roleMenuOpen by remember { mutableStateOf(false) }
+                fun doSend() {
+                    val t = text.trim()
+                    if (t.isNotEmpty()) {
+                        onSend(t, researchMode)
+                        text = ""; researchMode = false; attachedName = null
+                    }
+                }
+                Box {
+                    Surface(
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = Accent,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .combinedClickable(
+                                onClick = { if (busy) onStop() else doSend() },
+                                onLongClick = { if (!busy) roleMenuOpen = true },
+                            ),
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                if (busy) Icons.Default.Stop else Icons.Default.ArrowUpward,
+                                if (busy) "Stop" else "Send (long-press to pick a model)",
+                                tint = Color.White,
+                            )
                         }
-                    },
-                    modifier = Modifier.size(48.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent),
-                ) {
-                    Icon(
-                        if (busy) Icons.Default.Stop else Icons.Default.ArrowUpward,
-                        if (busy) "Stop" else "Send",
-                        tint = Color.White,
-                    )
+                    }
+                    DropdownMenu(expanded = roleMenuOpen, onDismissRequest = { roleMenuOpen = false }) {
+                        Text(
+                            "Send this one message with:",
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelSmall, color = FgMuted,
+                        )
+                        com.chomugiri.app.core.ROLE_ORDER.forEach { role ->
+                            DropdownMenuItem(
+                                text = { Text(com.chomugiri.app.core.ROLE_LABELS[role] ?: role.name) },
+                                onClick = {
+                                    roleMenuOpen = false
+                                    val t = text.trim()
+                                    if (t.isNotEmpty()) {
+                                        onSendWithRole(t, role)
+                                        text = ""; researchMode = false; attachedName = null
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }

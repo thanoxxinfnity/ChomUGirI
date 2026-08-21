@@ -52,6 +52,7 @@ fun runPipeline(
 
         var clean = false
         var lastIssues: List<AuditIssue> = emptyList()
+        val resolvedByParts = mutableListOf("Kimi K3")
 
         for (i in 1..maxLoops) {
             emit(PipelineEvent.Step("GLM 5.2 audit round $i/$maxLoops..."))
@@ -66,6 +67,7 @@ fun runPipeline(
             if (lastIssues.isEmpty() && !clean) {
                 lastIssues = listOf(AuditIssue("unknown", glmOut.take(500)))
             }
+            if ("GLM audit" !in resolvedByParts) resolvedByParts += "GLM audit"
 
             emit(
                 PipelineEvent.Step(
@@ -97,6 +99,7 @@ fun runPipeline(
         }
 
         if (!clean && lastIssues.isNotEmpty()) {
+            resolvedByParts += "DeepSeek R1 (fallback)"
             emit(PipelineEvent.Step("Kimi/GLM got stuck — DeepSeek R1 is reasoning through the bug..."))
             val deepOut = LlmClient.complete(
                 settings.provider(RoleKey.DEEPSEEK), "DeepSeek R1",
@@ -137,6 +140,7 @@ fun runPipeline(
                 if (patch.isNotEmpty()) {
                     files = mergeFiles(files, patch)
                     emit(PipelineEvent.Files(files))
+                    resolvedByParts += "Nemotron safety fix"
                 }
             }
             emit(
@@ -151,7 +155,7 @@ fun runPipeline(
             emit(PipelineEvent.Step("LITE tier — skipping audit and safety passes for speed.", done = true))
         }
 
-        emit(PipelineEvent.Done(files))
+        emit(PipelineEvent.Done(files, resolvedByParts.joinToString(" + "), issuesToText(lastIssues).lines().filter { it.isNotBlank() }))
     } catch (e: Exception) {
         emit(PipelineEvent.Failed(e.message ?: "Unexpected error in the pipeline."))
     }

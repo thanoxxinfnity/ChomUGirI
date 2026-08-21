@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.chomugiri.app.core.*
 import com.chomugiri.app.data.AppViewModel
 import com.chomugiri.app.net.SearchClient
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,6 +109,8 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     Field("Model", cfg.model) { v ->
                         vm.updateSettings { it.withProvider(role, it.provider(role).copy(model = v)) }
                     }
+                    Spacer(Modifier.height(10.dp))
+                    ProviderHealthCheck(role, cfg)
                 }
             }
 
@@ -233,6 +237,45 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+private sealed class PingUiState {
+    data object Loading : PingUiState()
+    data class Done(val ok: Boolean, val latencyMs: Long, val message: String) : PingUiState()
+}
+
+/** A real, minimal round-trip to the provider — proves the key/model/base-url actually work. */
+@Composable
+private fun ProviderHealthCheck(role: RoleKey, cfg: ProviderConfig) {
+    var state by remember(role, cfg) { mutableStateOf<PingUiState?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(
+            onClick = {
+                state = PingUiState.Loading
+                scope.launch {
+                    val r = com.chomugiri.app.net.LlmClient.ping(cfg, ROLE_LABELS[role] ?: role.name)
+                    state = PingUiState.Done(r.ok, r.latencyMs, r.message)
+                }
+            },
+            enabled = state !is PingUiState.Loading,
+        ) {
+            Icon(Icons.Default.NetworkCheck, null, tint = Accent2, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Test connection", color = Accent2, style = MaterialTheme.typography.bodySmall)
+        }
+        when (val s = state) {
+            is PingUiState.Loading -> CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Accent2)
+            is PingUiState.Done -> Text(
+                if (s.ok) "OK · ${s.latencyMs}ms" else s.message.take(60),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (s.ok) Success else Danger,
+                maxLines = 1,
+            )
+            null -> Unit
         }
     }
 }

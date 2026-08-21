@@ -250,6 +250,14 @@ private fun DrawerItem(
     )
 }
 
+/** A real, derived signal — not an AI opinion — from what the swarm actually reported for this project. */
+@Composable
+private fun healthBadge(a: com.chomugiri.app.core.Artifact): Pair<String, Color>? = when {
+    a.resolvedBy == null -> null
+    a.lastAuditIssues.isEmpty() -> "Clean" to Success
+    else -> "${a.lastAuditIssues.size} fixed" to Accent2
+}
+
 private fun formatBuildStats(a: com.chomugiri.app.core.Artifact): String? {
     val ms = a.buildMs ?: return null
     val seconds = ms / 1000
@@ -318,7 +326,15 @@ internal fun ArtifactsListScreen(vm: AppViewModel) {
                 ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f)) {
-                            Text(a.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(a.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                                healthBadge(a)?.let { (label, color) ->
+                                    Spacer(Modifier.width(8.dp))
+                                    Surface(color = color.copy(alpha = 0.15f), shape = RoundedCornerShape(6.dp)) {
+                                        Text(label, Modifier.padding(horizontal = 6.dp, vertical = 1.dp), style = MaterialTheme.typography.labelSmall, color = color)
+                                    }
+                                }
+                            }
                             Text(
                                 "${a.files.size} file(s)" + (formatBuildStats(a)?.let { " · $it" } ?: ""),
                                 style = MaterialTheme.typography.bodySmall,

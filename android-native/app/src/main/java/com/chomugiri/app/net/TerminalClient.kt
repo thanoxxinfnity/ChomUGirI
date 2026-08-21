@@ -105,6 +105,17 @@ object TerminalClient {
     private val _screen = MutableStateFlow("")
     val screen: StateFlow<String> = _screen.asStateFlow()
 
+    /** Recently typed commands, newest first — lets the UI offer tap-to-recall instead of arrow keys. */
+    private val _commandHistory = MutableStateFlow<List<String>>(emptyList())
+    val commandHistory: StateFlow<List<String>> = _commandHistory.asStateFlow()
+    private const val MAX_HISTORY = 30
+
+    fun recordHistory(command: String) {
+        val trimmed = command.trim()
+        if (trimmed.isEmpty()) return
+        _commandHistory.value = (listOf(trimmed) + _commandHistory.value.filterNot { it == trimmed }).take(MAX_HISTORY)
+    }
+
     private const val MAX_SCREEN = 120_000
 
     /** The literal split by `""` so the PTY's echo can never match the real completion line. */
@@ -132,6 +143,11 @@ object TerminalClient {
         return u
     }
 
+    /**
+     * The URL is whatever the user typed by hand, so it can be malformed in ways OkHttp's
+     * builder rejects outright (throws IllegalArgumentException before any network call even
+     * starts) — that must turn into a status message, not a crash on the calling thread.
+     */
     fun connect(rawUrl: String, authToken: String) {
         disconnect()
         val url = normalizeUrl(rawUrl)
@@ -142,15 +158,22 @@ object TerminalClient {
         _status.value = "Connecting..."
         appendScreen("\n[connecting to $url]\n")
 
-        val req = Request.Builder()
-            .url(url)
-            .addHeader("Sec-WebSocket-Protocol", "tty")
-            // ngrok's free tier serves a browser interstitial that would swallow the upgrade.
-            // The header is the documented opt-out; the non-browser UA keeps it from triggering
-            // in the first place.
-            .addHeader("ngrok-skip-browser-warning", "true")
-            .addHeader("User-Agent", "ChomuGirI-Terminal/1.2")
-            .build()
+        val req = try {
+            Request.Builder()
+                .url(url)
+                .addHeader("Sec-WebSocket-Protocol", "tty")
+                // ngrok's free tier serves a browser interstitial that would swallow the upgrade.
+                // The header is the documented opt-out; the non-browser UA keeps it from triggering
+                // in the first place.
+                .addHeader("ngrok-skip-browser-warning", "true")
+                .addHeader("User-Agent", "ChomuGirI-Terminal/1.2")
+                .build()
+        } catch (e: Exception) {
+            val why = "That doesn't look like a valid URL: ${e.message ?: "malformed URL"}"
+            _status.value = why
+            appendScreen("\n[$why]\n")
+            return
+        }
 
         socket = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {

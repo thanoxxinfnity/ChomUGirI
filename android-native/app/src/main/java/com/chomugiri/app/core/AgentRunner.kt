@@ -53,6 +53,8 @@ fun runTerminalAgent(
     maxSteps: Int = 25,
     /** Called before a file-read command runs; the run stops if this returns false. */
     onConfirmRead: suspend (path: String) -> Boolean = { true },
+    /** Project env vars — actually exported into the shell before any build command runs. */
+    envVars: Map<String, String> = emptyMap(),
 ): Flow<PipelineEvent> = flow {
     if (!TerminalClient.connected.value) {
         emit(PipelineEvent.Failed("Terminal is not connected. Connect it on the Terminal tab first."))
@@ -68,6 +70,19 @@ fun runTerminalAgent(
         val mk = TerminalClient.runCommand("mkdir -p $workDir && cd $workDir && pwd", 60_000)
         val resolvedDir = mk.output.lines().lastOrNull { it.trim().startsWith("/") }?.trim() ?: workDir
         emit(PipelineEvent.Step("Working directory: $resolvedDir", done = true))
+
+        if (envVars.isNotEmpty()) {
+            emit(PipelineEvent.Step("Exporting ${envVars.size} env var(s)..."))
+            for ((name, value) in envVars) {
+                if (!name.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) continue
+                val r = TerminalClient.runCommand("export $name=\"\$(echo '${b64(value)}' | base64 -d)\"", 30_000)
+                if (r.exitCode != 0) {
+                    emit(PipelineEvent.Failed("Failed to export $name: ${r.output.take(300)}"))
+                    return@flow
+                }
+            }
+            emit(PipelineEvent.Step("Env vars exported.", done = true))
+        }
 
         if (files.isNotEmpty()) {
             emit(PipelineEvent.Step("Copying ${files.size} file(s) over..."))

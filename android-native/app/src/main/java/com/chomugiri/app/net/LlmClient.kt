@@ -112,6 +112,26 @@ object LlmClient {
         }
     }.flowOn(Dispatchers.IO)
 
+    /** Result of a real, minimal round-trip to a provider — used by the Settings health check. */
+    data class PingResult(val ok: Boolean, val latencyMs: Long, val message: String)
+
+    /** Sends the smallest real request that still proves the key/model/base-url actually work. */
+    suspend fun ping(cfg: ProviderConfig, role: String): PingResult {
+        val started = System.currentTimeMillis()
+        return try {
+            complete(
+                cfg, role,
+                listOf(ChatTurn("user", "Reply with exactly one word: hi")),
+                temperature = 0.0, maxTokens = 8,
+            )
+            PingResult(true, System.currentTimeMillis() - started, "OK")
+        } catch (e: LlmException) {
+            PingResult(false, System.currentTimeMillis() - started, e.message ?: "Failed")
+        } catch (e: Exception) {
+            PingResult(false, System.currentTimeMillis() - started, e.message ?: "Failed")
+        }
+    }
+
     /** Runs the same streaming call but hands back the finished text. */
     suspend fun complete(
         cfg: ProviderConfig,
