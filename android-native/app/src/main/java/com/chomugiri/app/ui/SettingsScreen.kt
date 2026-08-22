@@ -1,6 +1,7 @@
 package com.chomugiri.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -123,6 +124,48 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                         }
                     }) {
                         Text("Use free Pollinations model for this role — no key needed", color = Success, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Or use real Claude via OpenRouter — needs your own OpenRouter key with credits, " +
+                            "never free (verified live: Opus 5 is \$5/\$25 per 1M tokens there, not \$0).",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FgMuted,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            "Opus 5" to "anthropic/claude-opus-5",
+                            "Sonnet 5" to "anthropic/claude-sonnet-5",
+                            "Opus 4.8" to "anthropic/claude-opus-4.8",
+                            "Haiku 4.5" to "anthropic/claude-haiku-4.5",
+                        ).forEach { (label, slug) ->
+                            Surface(
+                                color = BgDark,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    vm.updateSettings {
+                                        it.withProvider(
+                                            role,
+                                            it.provider(role).copy(
+                                                baseUrl = OPENROUTER_BASE_URL,
+                                                model = slug,
+                                            ),
+                                        )
+                                    }
+                                },
+                            ) {
+                                Text(
+                                    label,
+                                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Accent,
+                                )
+                            }
+                        }
                     }
                     Spacer(Modifier.height(4.dp))
                     ProviderHealthCheck(role, cfg)
