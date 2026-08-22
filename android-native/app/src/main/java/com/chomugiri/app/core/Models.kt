@@ -54,6 +54,10 @@ data class AppSettings(
     /** Real image generation for {{IMAGE: ...}} markers in generated projects. Never bundled. */
     val geminiApiKey: String = "",
     val geminiModel: String = "gemini-2.5-flash-image",
+    /** Real video generation via Hugging Face's Inference Providers router. Never bundled — a
+     * free HF account's own token, with a small monthly credit (not unlimited). */
+    val huggingfaceToken: String = "",
+    val huggingfaceVideoModel: String = com.chomugiri.app.net.HF_DEFAULT_VIDEO_MODEL_PATH,
 ) {
     fun provider(role: RoleKey): ProviderConfig =
         providers[role.name] ?: ProviderConfig(model = defaultModelFor(role))

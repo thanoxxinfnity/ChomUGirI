@@ -279,6 +279,28 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 GeminiHealthCheck(settings.geminiApiKey, settings.geminiModel)
             }
 
+            Section("Video Generation (Hugging Face)") {
+                Text(
+                    "Real text-to-video via Hugging Face's Inference Providers (fal.ai/Wan2.2). " +
+                        "Get a free token from huggingface.co/settings/tokens — free accounts get a " +
+                        "small included monthly credit, not unlimited (video is too GPU-expensive " +
+                        "for any provider to give away without limit). Create a token scoped to " +
+                        "just \"Inference Providers\" rather than a broad one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FgMuted,
+                )
+                Spacer(Modifier.height(10.dp))
+                Field("Hugging Face token", settings.huggingfaceToken, secret = true) { v ->
+                    vm.updateSettings { it.copy(huggingfaceToken = v) }
+                }
+                Spacer(Modifier.height(8.dp))
+                Field("Provider/model path", settings.huggingfaceVideoModel) { v ->
+                    vm.updateSettings { it.copy(huggingfaceVideoModel = v) }
+                }
+                Spacer(Modifier.height(10.dp))
+                HuggingFaceHealthCheck(settings.huggingfaceToken, settings.huggingfaceVideoModel)
+            }
+
             Section("Deploy") {
                 Text(
                     "Needed for the Deploy button on a project. Get a token from Vercel's " +
@@ -385,6 +407,48 @@ private fun GeminiHealthCheck(apiKey: String, model: String) {
                 Icon(Icons.Default.NetworkCheck, null, tint = Accent2, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Test image generation", color = Accent2, style = MaterialTheme.typography.bodySmall)
+            }
+            if (state is PingUiState.Loading) {
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Accent2)
+            } else if (state is PingUiState.Done && (state as PingUiState.Done).ok) {
+                Text("OK · ${(state as PingUiState.Done).latencyMs}ms", style = MaterialTheme.typography.labelSmall, color = Success)
+            }
+        }
+        (state as? PingUiState.Done)?.let { s ->
+            if (!s.ok) {
+                Text(s.message, style = MaterialTheme.typography.labelSmall, color = Danger, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+    }
+}
+
+/** A real, tiny video-generation call — proves the HF token/model path actually work end to end.
+ * Genuinely costs a sliver of the account's monthly credit, same as any other real generation. */
+@Composable
+private fun HuggingFaceHealthCheck(token: String, modelPath: String) {
+    var state by remember(token, modelPath) { mutableStateOf<PingUiState?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = {
+                    state = PingUiState.Loading
+                    scope.launch {
+                        val started = System.currentTimeMillis()
+                        state = try {
+                            com.chomugiri.app.net.HuggingFaceClient.generateVideo(token, modelPath, "a small blue circle spinning")
+                            PingUiState.Done(true, System.currentTimeMillis() - started, "OK")
+                        } catch (e: Exception) {
+                            PingUiState.Done(false, System.currentTimeMillis() - started, e.message ?: "Failed")
+                        }
+                    }
+                },
+                enabled = state !is PingUiState.Loading && token.isNotBlank(),
+            ) {
+                Icon(Icons.Default.NetworkCheck, null, tint = Accent2, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Test video generation (uses real credit)", color = Accent2, style = MaterialTheme.typography.bodySmall)
             }
             if (state is PingUiState.Loading) {
                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Accent2)

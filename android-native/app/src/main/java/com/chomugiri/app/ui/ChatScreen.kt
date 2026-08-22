@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.VpnKey
@@ -760,7 +761,11 @@ private fun Composer(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                if (pickedIntent == com.chomugiri.app.core.Intent.PPTX) "Create a PPT" else "Deep Research",
+                                when (pickedIntent) {
+                                    com.chomugiri.app.core.Intent.PPTX -> "Create a PPT"
+                                    com.chomugiri.app.core.Intent.VIDEO -> "Generate a video"
+                                    else -> "Deep Research"
+                                },
                                 style = MaterialTheme.typography.labelSmall, color = Accent2,
                             )
                             Spacer(Modifier.width(6.dp))
@@ -816,6 +821,19 @@ private fun Composer(
                             onClick = {
                                 toolsOpen = false
                                 pickedIntent = if (pickedIntent == com.chomugiri.app.core.Intent.PPTX) null else com.chomugiri.app.core.Intent.PPTX
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (pickedIntent == com.chomugiri.app.core.Intent.VIDEO) "Generate a video (on)" else "Generate a video (Hugging Face)") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Movie, null,
+                                    tint = if (pickedIntent == com.chomugiri.app.core.Intent.VIDEO) Accent else FgMuted,
+                                )
+                            },
+                            onClick = {
+                                toolsOpen = false
+                                pickedIntent = if (pickedIntent == com.chomugiri.app.core.Intent.VIDEO) null else com.chomugiri.app.core.Intent.VIDEO
                             },
                         )
                         DropdownMenuItem(

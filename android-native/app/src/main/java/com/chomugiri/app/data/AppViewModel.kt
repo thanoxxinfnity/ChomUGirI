@@ -209,12 +209,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             Intent.PIPELINE -> "pipeline"
                             Intent.RESEARCH -> "research"
                             Intent.PPTX -> "pipeline"
+                            Intent.VIDEO -> "pipeline"
                         },
                         modelUsed = when {
                             forcedRole != null -> ROLE_LABELS[forcedRole]
                             intent == Intent.CHAT -> ROLE_LABELS[RoleKey.FAST]
                             intent == Intent.RESEARCH -> "Deep Research"
                             intent == Intent.PPTX -> "PPTX Generator"
+                            intent == Intent.VIDEO -> "Video Generator"
                             else -> null
                         },
                     )
@@ -233,6 +235,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     Intent.RESEARCH -> consume(convId, assistantId, runDeepResearch(text, s), text)
                     Intent.PPTX -> consume(convId, assistantId, runPptxPipeline(text, s), text)
+                    Intent.VIDEO -> consume(convId, assistantId, runVideoPipeline(text, s), text)
                 }
             } catch (e: Exception) {
                 updateMessage(convId, assistantId) {
