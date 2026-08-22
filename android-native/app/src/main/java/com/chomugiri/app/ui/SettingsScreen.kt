@@ -109,7 +109,22 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     Field("Model", cfg.model) { v ->
                         vm.updateSettings { it.withProvider(role, it.provider(role).copy(model = v)) }
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = {
+                        vm.updateSettings {
+                            it.withProvider(
+                                role,
+                                it.provider(role).copy(
+                                    apiKey = "",
+                                    baseUrl = com.chomugiri.app.net.POLLINATIONS_BASE_URL,
+                                    model = com.chomugiri.app.net.POLLINATIONS_DEFAULT_MODEL,
+                                ),
+                            )
+                        }
+                    }) {
+                        Text("Use free Pollinations model for this role — no key needed", color = Success, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Spacer(Modifier.height(4.dp))
                     ProviderHealthCheck(role, cfg)
                 }
             }

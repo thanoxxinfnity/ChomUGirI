@@ -68,6 +68,13 @@ object LlmClient {
         maxTokens: Int = 8192,
         jsonMode: Boolean = false,
     ): Flow<String> = flow {
+        // Pollinations' free tier is genuinely keyless and speaks a completely different (GET,
+        // single-prompt) protocol — route there instead of assuming every base URL is OpenAI-style.
+        if (isPollinationsUrl(cfg.baseUrl)) {
+            emit(PollinationsClient.complete(cfg.model, messages))
+            return@flow
+        }
+
         if (cfg.apiKey.isBlank()) {
             throw LlmException(role, "No API key set for $role. Add one in Settings.")
         }
