@@ -9,7 +9,7 @@ val ROLE_ORDER = listOf(RoleKey.FAST, RoleKey.KIMI, RoleKey.GLM, RoleKey.DEEPSEE
 val ROLE_LABELS = mapOf(
     RoleKey.FAST to "Fast Chat Model",
     RoleKey.KIMI to "Kimi K3 (Coder)",
-    RoleKey.GLM to "GLM 5.2 (Auditor)",
+    RoleKey.GLM to "GLM 5.3 (Auditor)",
     RoleKey.DEEPSEEK to "DeepSeek R1 (Deep Logic)",
     RoleKey.NEMOTRON to "Nemotron 3 Ultra 550B (Safety Net)",
 )
@@ -65,7 +65,10 @@ data class AppSettings(
 fun defaultModelFor(role: RoleKey): String = when (role) {
     RoleKey.FAST -> "meta/llama-3.1-8b-instruct"
     RoleKey.KIMI -> "meta/llama-3.1-70b-instruct"
-    RoleKey.GLM -> "z-ai/glm-5.2"
+    // glm-5.2 hit end-of-life 2026-08-21 (confirmed via a live HTTP 410 "Gone" from the provider)
+    // and glm-5.3 is the current live successor — verified against the provider's own /models
+    // catalog before picking it, not guessed.
+    RoleKey.GLM -> "z-ai/glm-5.3"
     RoleKey.DEEPSEEK -> "deepseek-ai/deepseek-v4-flash-0731"
     RoleKey.NEMOTRON -> "nvidia/nemotron-3-ultra-550b-a55b"
 }

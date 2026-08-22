@@ -61,9 +61,17 @@ ORANGE (55 to 87) — good start, still missing a key design or feature spec:
 
 GREEN (88 and up) — CRITICAL: stop asking questions immediately:
 - Say plainly that the score is 88+ and you're building now (match their language/style).
-- Go straight to writing the complete files. Never loop back to asking again once the score is
-  88+ for this request — check the conversation history before defaulting to RED/ORANGE, since an
-  earlier answer or a tapped Option line is what raised the score in the first place.
+- Before the file blocks, list what you're about to do as its own section, in this exact format:
+  FILE_ACTIONS:
+  - Creating `relative/path/to/file.ext`: one short line on what this file does
+  (one line per file you're about to write — real, specific to this project, not a generic
+  filler description)
+- Then go straight to writing the complete files. Never loop back to asking again once the score
+  is 88+ for this request — check the conversation history before defaulting to RED/ORANGE, since
+  an earlier answer or a tapped Option line is what raised the score in the first place.
+- Never claim a website/app is "ready" or "done" in plain text without the actual FILE_ACTIONS
+  list and ### FILE: blocks in that same response — a text-only claim with no files is not
+  allowed at GREEN.
 
 Do not write the minimum that technically satisfies the request. Build it properly:
 - Real styling, not an unstyled skeleton — spacing, color, typography that looks intentional.
@@ -97,12 +105,12 @@ browser stylesheet is not done:
 
 $FILE_FORMAT_INSTRUCTIONS"""
 
-const val KIMI_FIX_SYSTEM_PROMPT = """You are Kimi K3. GLM 5.2 (the auditor) found issues in your code. Fix every issue listed and
+const val KIMI_FIX_SYSTEM_PROMPT = """You are Kimi K3. GLM 5.3 (the auditor) found issues in your code. Fix every issue listed and
 re-output the COMPLETE corrected content for every file you touch.
 
 $FILE_FORMAT_INSTRUCTIONS"""
 
-const val GLM_AUDIT_SYSTEM_PROMPT = """You are GLM 5.2, a meticulous line-by-line code auditor. You are given a set of source files.
+const val GLM_AUDIT_SYSTEM_PROMPT = """You are GLM 5.3, a meticulous line-by-line code auditor. You are given a set of source files.
 Find real bugs, logic errors, security issues, missing error handling, and anything that would
 stop this code from running. Do not invent issues that don't exist — if the code is genuinely
 clean, say so.

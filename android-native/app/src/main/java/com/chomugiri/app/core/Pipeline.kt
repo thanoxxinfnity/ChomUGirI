@@ -25,6 +25,22 @@ private fun issuesToText(issues: List<AuditIssue>) =
 private val THINKING_BLOCK = Regex("(?is)<thinking>(.*?)</thinking>")
 private val PROMPT_SCORE_LINE = Regex("""(?im)^[ \t]*PROMPT_SCORE:[ \t]*(\d{1,3}).*$\n?""")
 private val SCORE_COLOR_LINE = Regex("""(?im)^[ \t]*SCORE_COLOR:[ \t]*(RED|ORANGE|GREEN).*$\n?""")
+private val FILE_ACTIONS_BLOCK = Regex("""(?im)^[ \t]*FILE_ACTIONS:[ \t]*\n((?:^[ \t]*-.*$\n?)+)""")
+
+/**
+ * Pulls Kimi's real FILE_ACTIONS tracker (from KIMI_SYSTEM_PROMPT's GREEN case) out of the
+ * response and turns each line into a real "about to do this" Step — genuinely what Kimi said
+ * it's about to write, not a fabricated progress message. Returns (steps, textWithBlockRemoved).
+ */
+internal fun extractFileActions(text: String): Pair<List<String>, String> {
+    val match = FILE_ACTIONS_BLOCK.find(text) ?: return emptyList<String>() to text
+    val lines = match.groupValues[1]
+        .lines()
+        .map { it.trim().trimStart('-').trim() }
+        .filter { it.isNotEmpty() }
+    val rest = text.removeRange(match.range).trim()
+    return lines to rest
+}
 
 /**
  * Pulls Kimi's real PROMPT_SCORE/SCORE_COLOR lines (from the prompt-score-evaluator decision
@@ -79,10 +95,12 @@ fun runPipeline(
         )
         val (thinkingSteps, thinkingStripped) = extractThinking(rawKimiOut)
         thinkingSteps.forEach { emit(PipelineEvent.Step(it, done = true)) }
-        val (promptScore, scoreColor, kimiOut) = extractPromptScore(thinkingStripped)
+        val (promptScore, scoreColor, scoreStripped) = extractPromptScore(thinkingStripped)
         if (promptScore != null) {
             emit(PipelineEvent.Step("Prompt score: $promptScore/100" + (scoreColor?.let { " ($it)" } ?: ""), done = true))
         }
+        val (fileActions, kimiOut) = extractFileActions(scoreStripped)
+        fileActions.forEach { emit(PipelineEvent.Step(it, done = true)) }
         files = parseFileBlocks(kimiOut)
         if (files.isEmpty()) {
             if (kimiOut.isBlank()) {
@@ -107,15 +125,15 @@ fun runPipeline(
         // wrote — it degrades to "skip this stage" so the user still gets a real, working
         // project instead of a scary full failure over what's often just one flaky call.
         for (i in 1..maxLoops) {
-            emit(PipelineEvent.Step("GLM 5.2 audit round $i/$maxLoops..."))
+            emit(PipelineEvent.Step("GLM 5.3 audit round $i/$maxLoops..."))
             val glmOut = try {
                 LlmClient.complete(
-                    settings.provider(RoleKey.GLM), "GLM 5.2",
+                    settings.provider(RoleKey.GLM), "GLM 5.3",
                     listOf(ChatTurn("system", GLM_AUDIT_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
                     temperature = 0.1, jsonMode = true,
                 )
             } catch (e: Exception) {
-                emit(PipelineEvent.Step("GLM audit failed: ${e.message ?: "unknown error"} — skipping this round. (Settings > GLM 5.2 > Test connection shows the exact error.)", done = true))
+                emit(PipelineEvent.Step("GLM audit failed: ${e.message ?: "unknown error"} — skipping this round. (Settings > GLM 5.3 > Test connection shows the exact error.)", done = true))
                 break
             }
             val parsed = parseIssues(extractJsonObject(glmOut))

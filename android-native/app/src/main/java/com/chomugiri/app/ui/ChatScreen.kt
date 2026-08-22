@@ -494,7 +494,7 @@ private val SUGGESTIONS = listOf(
 private val ROUTER_STAGES = listOf(
     "Fast Chat" to "casual talk",
     "Kimi K3" to "coder",
-    "GLM 5.2" to "auditor",
+    "GLM 5.3" to "auditor",
     "DeepSeek R1" to "fallback",
     "Nemotron" to "safety net",
 )
