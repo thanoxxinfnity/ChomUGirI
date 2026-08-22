@@ -5,4 +5,12 @@
         <item name="android:navigationBarColor">#0C0C11</item>
         <item name="android:windowBackground">#0C0C11</item>
     </style>
+
+    <!-- Branded cold-start screen (Android 12+ SplashScreen API, backported by core-splashscreen)
+         instead of a blank flash before Compose's first frame. -->
+    <style name="Theme.ChomuGirI.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.ChomuGirI</item>
+    </style>
 </resources>
