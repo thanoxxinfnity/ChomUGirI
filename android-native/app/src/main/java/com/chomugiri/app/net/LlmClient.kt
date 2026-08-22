@@ -59,6 +59,19 @@ object LlmClient {
         return body
     }
 
+    /**
+     * A pooled keep-alive connection that OkHttp still thinks is alive but the mobile network has
+     * actually already killed (a network handoff, doze, a flaky tower) surfaces as a raw TLS
+     * error on the very next request — SSLException/"bad_record_mac"/"BAD_DECRYPT" being the
+     * classic signature — not as a clean IOException up front. It is not our request that's bad;
+     * retrying once on a fresh connection genuinely resolves it in the normal case.
+     */
+    private fun isRetryableNetworkError(e: Throwable): Boolean = when (e) {
+        is javax.net.ssl.SSLException, is java.net.SocketException,
+        is java.net.SocketTimeoutException, is java.io.EOFException -> true
+        else -> false
+    }
+
     /** Streams content deltas as they arrive. */
     fun stream(
         cfg: ProviderConfig,
@@ -83,39 +96,62 @@ object LlmClient {
         }
 
         val url = cfg.baseUrl.trimEnd('/') + "/chat/completions"
-        val req = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer ${cfg.apiKey}")
-            .addHeader("Accept", "text/event-stream")
-            .post(buildBody(cfg, messages, temperature, maxTokens, jsonMode).toString().toRequestBody(JSON))
-            .build()
+        val bodyStr = buildBody(cfg, messages, temperature, maxTokens, jsonMode).toString()
 
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                val errText = resp.body?.string().orEmpty()
-                throw LlmException(role, "$role request failed (HTTP ${resp.code}): ${errText.take(300)}")
-            }
-            val source = resp.body?.source() ?: throw LlmException(role, "$role returned an empty response.")
+        var emittedAny = false
+        var attempt = 0
+        while (true) {
+            attempt++
+            val req = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer ${cfg.apiKey}")
+                .addHeader("Accept", "text/event-stream")
+                .post(bodyStr.toRequestBody(JSON))
+                .build()
+            try {
+                http.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        val errText = resp.body?.string().orEmpty()
+                        throw LlmException(role, "$role request failed (HTTP ${resp.code}): ${errText.take(300)}")
+                    }
+                    val source = resp.body?.source() ?: throw LlmException(role, "$role returned an empty response.")
 
-            while (true) {
-                val line = source.readUtf8Line() ?: break
-                if (!line.startsWith("data:")) continue
-                val payload = line.removePrefix("data:").trim()
-                if (payload.isEmpty()) continue
-                if (payload == "[DONE]") break
+                    while (true) {
+                        val line = source.readUtf8Line() ?: break
+                        if (!line.startsWith("data:")) continue
+                        val payload = line.removePrefix("data:").trim()
+                        if (payload.isEmpty()) continue
+                        if (payload == "[DONE]") break
 
-                val delta = try {
-                    JSONObject(payload)
-                        .optJSONArray("choices")
-                        ?.optJSONObject(0)
-                        ?.optJSONObject("delta")
-                        ?.optString("content")
-                        .orEmpty()
-                } catch (e: Exception) {
-                    // A malformed keep-alive or partial frame is not fatal — keep reading.
-                    ""
+                        val delta = try {
+                            JSONObject(payload)
+                                .optJSONArray("choices")
+                                ?.optJSONObject(0)
+                                ?.optJSONObject("delta")
+                                ?.optString("content")
+                                .orEmpty()
+                        } catch (e: Exception) {
+                            // A malformed keep-alive or partial frame is not fatal — keep reading.
+                            ""
+                        }
+                        if (delta.isNotEmpty()) {
+                            emit(delta)
+                            emittedAny = true
+                        }
+                    }
                 }
-                if (delta.isNotEmpty()) emit(delta)
+                break
+            } catch (e: LlmException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                // Only retry a completely clean slate: nothing streamed yet, one retry, and a
+                // genuinely transient-looking error — never on a real HTTP/API failure, and never
+                // after content has already reached the caller (retrying then would duplicate it).
+                if (!emittedAny && attempt < 2 && isRetryableNetworkError(e)) continue
+                throw LlmException(
+                    role,
+                    "$role: connection dropped (${e.javaClass.simpleName}${if (attempt > 1) ", retried once" else ""}) — ${e.message ?: "network error"}. Usually a flaky mobile connection; try again.",
+                )
             }
         }
     }.flowOn(Dispatchers.IO)
