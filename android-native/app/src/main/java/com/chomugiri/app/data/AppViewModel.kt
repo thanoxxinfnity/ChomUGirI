@@ -334,6 +334,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                     persistArtifacts()
+                    // A freshly built website deploys itself — no manual Deploy tap needed. Only
+                    // does anything when a Vercel token is set and the project is a real website.
+                    artifactId?.let { autoDeployAndAnnounce(it) }
                 }
 
                 is PipelineEvent.Failed -> {
@@ -389,6 +392,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (it.id == artifactId) it.copy(files = block(it.files)) else it
         }
         persistArtifacts()
+        // Every real edit path (save, rename, delete, add, regenerate) routes through here, so an
+        // edited website redeploys itself the same way a freshly built one does.
+        autoDeployAndAnnounce(artifactId)
     }
 
     fun updateFileContent(artifactId: String, path: String, content: String) =
@@ -573,6 +579,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 DeployUiState.Failed(e.message ?: "Deploy failed.")
             }
             _deployState.value = _deployState.value + (artifact.id to result)
+        }
+    }
+
+    private fun findConversationIdForArtifact(artifactId: String): String? =
+        _conversations.value.firstOrNull { conv -> conv.messages.any { it.artifactId == artifactId } }?.id
+
+    /**
+     * Fires automatically after a website is built or its files are edited — no manual Deploy tap
+     * needed. Only real, honest conditions gate it: a Vercel token must actually be set, the
+     * artifact must actually contain an .html file (this API ships static files with no build
+     * step, so anything else wouldn't work), and it must not be a binary artifact like a .pptx
+     * (VercelClient sends file content as raw text, which would corrupt base64 bytes). Posts the
+     * real deploy result — success or failure — back into whichever conversation this artifact
+     * belongs to, so the live link genuinely shows up in chat rather than only in the panel.
+     */
+    private fun autoDeployAndAnnounce(artifactId: String) {
+        val settings = _settings.value
+        if (settings.vercelToken.isBlank()) return
+        val artifact = _artifacts.value.firstOrNull { it.id == artifactId } ?: return
+        if (artifact.files.none { it.path.endsWith(".html", ignoreCase = true) }) return
+        if (artifact.files.any { it.encoding == "base64" }) return
+        if (_deployState.value[artifactId] is DeployUiState.Deploying) return
+
+        _deployState.value = _deployState.value + (artifactId to DeployUiState.Deploying)
+        viewModelScope.launch {
+            val result = try {
+                val r = VercelClient.deploy(settings.vercelToken, artifact.title, artifact.files)
+                DeployUiState.Success(r.url)
+            } catch (e: Exception) {
+                DeployUiState.Failed(e.message ?: "Deploy failed.")
+            }
+            _deployState.value = _deployState.value + (artifactId to result)
+
+            val convId = findConversationIdForArtifact(artifactId) ?: return@launch
+            val text = when (result) {
+                is DeployUiState.Success ->
+                    if (result.url != null) "Deployed to Vercel: ${result.url}"
+                    else "Deployed to Vercel, but it didn't return a URL this time — check your Vercel dashboard."
+                is DeployUiState.Failed -> "Auto-deploy to Vercel failed: ${result.message}"
+                is DeployUiState.Deploying -> return@launch
+            }
+            addMessage(convId, Message(id = UUID.randomUUID().toString(), role = "assistant", content = text))
+            persistConversations()
         }
     }
 

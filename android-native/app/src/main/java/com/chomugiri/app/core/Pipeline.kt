@@ -23,6 +23,20 @@ private fun issuesToText(issues: List<AuditIssue>) =
     issues.joinToString("\n") { "- [${it.file}] ${it.description}" }
 
 private val THINKING_BLOCK = Regex("(?is)<thinking>(.*?)</thinking>")
+private val PROMPT_SCORE_LINE = Regex("""(?im)^[ \t]*PROMPT_SCORE:[ \t]*(\d{1,3}).*$\n?""")
+private val SCORE_COLOR_LINE = Regex("""(?im)^[ \t]*SCORE_COLOR:[ \t]*(RED|ORANGE|GREEN).*$\n?""")
+
+/**
+ * Pulls Kimi's real PROMPT_SCORE/SCORE_COLOR lines (from the prompt-score-evaluator decision
+ * engine in KIMI_SYSTEM_PROMPT) out of the response so they show as a Thinking-bubble step
+ * instead of raw "PROMPT_SCORE: 42" text in the chat bubble. Returns (score, color, cleanedText).
+ */
+internal fun extractPromptScore(text: String): Triple<Int?, String?, String> {
+    val score = PROMPT_SCORE_LINE.find(text)?.groupValues?.get(1)?.toIntOrNull()
+    val color = SCORE_COLOR_LINE.find(text)?.groupValues?.get(1)?.uppercase()
+    val cleaned = text.replace(PROMPT_SCORE_LINE, "").replace(SCORE_COLOR_LINE, "").trim()
+    return Triple(score, color, cleaned)
+}
 
 /**
  * Pulls Kimi's real <thinking>...</thinking> block out of its raw response and turns it into a
@@ -63,8 +77,12 @@ fun runPipeline(
             listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", prompt),
             maxTokens = 8192,
         )
-        val (thinkingSteps, kimiOut) = extractThinking(rawKimiOut)
+        val (thinkingSteps, thinkingStripped) = extractThinking(rawKimiOut)
         thinkingSteps.forEach { emit(PipelineEvent.Step(it, done = true)) }
+        val (promptScore, scoreColor, kimiOut) = extractPromptScore(thinkingStripped)
+        if (promptScore != null) {
+            emit(PipelineEvent.Step("Prompt score: $promptScore/100" + (scoreColor?.let { " ($it)" } ?: ""), done = true))
+        }
         files = parseFileBlocks(kimiOut)
         if (files.isEmpty()) {
             if (kimiOut.isBlank()) {
