@@ -93,9 +93,11 @@ fun ChatScreen(
                 ) {
                     items(messages, key = { it.id }) { msg ->
                         Box(Modifier.animateItem()) {
-                            MessageRow(msg, artifacts, onOpenArtifact) { msgId ->
-                                activeId?.let { vm.branchConversation(it, msgId) }
-                            }
+                            MessageRow(
+                                msg, artifacts, onOpenArtifact,
+                                onBranch = { msgId -> activeId?.let { vm.branchConversation(it, msgId) } },
+                                onPickOption = { optionText -> vm.send(optionText) },
+                            )
                         }
                     }
                 }
@@ -117,12 +119,19 @@ fun ChatScreen(
     }
 }
 
+private val OPTION_LINE = Regex("""(?im)^\s*Option\s+([A-C]):\s*(.+)$""")
+
+/** Kimi's Option A/B/C lines, parsed into (letter, title) pairs for tap-to-pick chips. */
+private fun parseOptions(content: String): List<Pair<String, String>> =
+    OPTION_LINE.findAll(content).map { it.groupValues[1] to it.groupValues[2].trim() }.toList()
+
 @Composable
 private fun MessageRow(
     msg: Message,
     artifacts: List<Artifact>,
     onOpenArtifact: (String) -> Unit,
     onBranch: (String) -> Unit,
+    onPickOption: (String) -> Unit,
 ) {
     val isUser = msg.role == "user"
     Column(
@@ -135,24 +144,33 @@ private fun MessageRow(
         }
 
         if (msg.content.isNotBlank()) {
-            Column(
-                Modifier.widthIn(max = 560.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+            val contentVisible = remember(msg.id) {
+                androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true }
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visibleState = contentVisible,
+                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
+                    androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220)) { it / 6 },
             ) {
-                parseMessageParts(msg.content).forEach { part ->
-                    when (part) {
-                        is MessagePart.Code -> CodeBlock(part.lang, part.code)
-                        is MessagePart.Prose -> SelectionContainer {
-                            Surface(
-                                color = if (isUser) Accent.copy(alpha = 0.16f) else BgElevated,
-                                shape = RoundedCornerShape(16.dp),
-                            ) {
-                                Text(
-                                    part.text.trim(),
-                                    Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
+                Column(
+                    Modifier.widthIn(max = 560.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+                ) {
+                    parseMessageParts(msg.content).forEach { part ->
+                        when (part) {
+                            is MessagePart.Code -> CodeBlock(part.lang, part.code)
+                            is MessagePart.Prose -> SelectionContainer {
+                                Surface(
+                                    color = if (isUser) Accent.copy(alpha = 0.16f) else BgElevated,
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Text(
+                                        part.text.trim(),
+                                        Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                }
                             }
                         }
                     }
@@ -160,6 +178,41 @@ private fun MessageRow(
             }
         } else if (!isUser && msg.streaming && msg.steps.isEmpty()) {
             ShimmerText("Thinking...")
+        }
+
+        if (!isUser && !msg.streaming && msg.artifactId == null) {
+            val options = remember(msg.content) { parseOptions(msg.content) }
+            if (options.isNotEmpty()) {
+                val optionsVisible = remember(msg.id) {
+                    androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true }
+                }
+                androidx.compose.animation.AnimatedVisibility(
+                    visibleState = optionsVisible,
+                    enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260, delayMillis = 100)) +
+                        androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(260, delayMillis = 100)) { it / 4 },
+                ) {
+                    Column(Modifier.padding(top = 8.dp).widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        options.forEach { (letter, title) ->
+                            Surface(
+                                color = BgElevated,
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, Accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                                    .clickable { onPickOption("Option $letter: $title") },
+                            ) {
+                                Row(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(color = Accent.copy(alpha = 0.18f), shape = RoundedCornerShape(8.dp)) {
+                                        Text(letter, Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = Accent)
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if (!isUser && !msg.streaming && msg.content.isNotBlank()) {

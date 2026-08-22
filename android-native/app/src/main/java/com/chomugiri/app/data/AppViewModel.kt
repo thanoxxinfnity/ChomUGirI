@@ -189,7 +189,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val convId = ensureConversation(text)
         val s = _settings.value
 
-        addMessage(convId, Message(id = UUID.randomUUID().toString(), role = "user", content = text))
+        val userMsgId = UUID.randomUUID().toString()
+        addMessage(convId, Message(id = userMsgId, role = "user", content = text))
 
         val assistantId = UUID.randomUUID().toString()
         // Placeholder — its real kind/modelUsed land once the AI triage call below actually
@@ -218,7 +219,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 when (intent) {
                     Intent.CHAT -> runFastChat(convId, assistantId, text, s, forcedRole ?: RoleKey.FAST)
-                    Intent.PIPELINE -> consume(convId, assistantId, runPipeline(text, s), text)
+                    Intent.PIPELINE -> {
+                        // Real conversation history, not just this one isolated message — without
+                        // it Kimi can't tell "make a website" -> its own clarifying question ->
+                        // the user's answer is one continuous exchange, and would just ask again.
+                        val history = (activeConversation?.messages ?: emptyList())
+                            .filter { it.content.isNotBlank() && it.id != userMsgId && it.id != assistantId }
+                            .takeLast(8)
+                            .map { ChatTurn(it.role, it.content) }
+                        consume(convId, assistantId, runPipeline(text, s, history), text)
+                    }
                     Intent.RESEARCH -> consume(convId, assistantId, runDeepResearch(text, s), text)
                 }
             } catch (e: Exception) {

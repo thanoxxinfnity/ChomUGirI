@@ -22,6 +22,23 @@ private fun parseIssues(obj: org.json.JSONObject?): Pair<Boolean, List<AuditIssu
 private fun issuesToText(issues: List<AuditIssue>) =
     issues.joinToString("\n") { "- [${it.file}] ${it.description}" }
 
+private val THINKING_BLOCK = Regex("(?is)<thinking>(.*?)</thinking>")
+
+/**
+ * Pulls Kimi's real <thinking>...</thinking> block out of its raw response and turns it into a
+ * list of real reasoning lines for the Thinking bubble — genuinely what the model reasoned, not
+ * a fabricated progress message. Returns (steps, textWithThinkingBlockRemoved).
+ */
+internal fun extractThinking(raw: String): Pair<List<String>, String> {
+    val match = THINKING_BLOCK.find(raw) ?: return emptyList<String>() to raw
+    val lines = match.groupValues[1]
+        .lines()
+        .map { it.trim().trimStart('-', '*', '•').trim() }
+        .filter { it.isNotEmpty() }
+    val rest = raw.removeRange(match.range).trim()
+    return lines to rest
+}
+
 /**
  * Kimi (coder) -> GLM (auditor) loop -> DeepSeek R1 on a stuck bug -> Nemotron safety pass.
  * Each stage is a real, sequential model call; nothing here is simulated, which is also why a
@@ -30,6 +47,10 @@ private fun issuesToText(issues: List<AuditIssue>) =
 fun runPipeline(
     prompt: String,
     settings: AppSettings,
+    // Prior turns in this conversation — without this, Kimi judges every message in isolation
+    // and can't tell "make a website" -> its own clarifying questions -> the user's answer is
+    // one continuous exchange, so it would just ask again forever instead of ever building.
+    history: List<ChatTurn> = emptyList(),
 ): Flow<PipelineEvent> = flow {
     var files: List<GeneratedFile> = emptyList()
     // 0 means the LITE tier: Kimi's raw output only, no audit/fallback/safety pass at all.
@@ -37,11 +58,13 @@ fun runPipeline(
 
     try {
         emit(PipelineEvent.Step("Kimi K3 is looking at your request..."))
-        val kimiOut = LlmClient.complete(
+        val rawKimiOut = LlmClient.complete(
             settings.provider(RoleKey.KIMI), "Kimi K3",
-            listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT), ChatTurn("user", prompt)),
+            listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", prompt),
             maxTokens = 8192,
         )
+        val (thinkingSteps, kimiOut) = extractThinking(rawKimiOut)
+        thinkingSteps.forEach { emit(PipelineEvent.Step(it, done = true)) }
         files = parseFileBlocks(kimiOut)
         if (files.isEmpty()) {
             if (kimiOut.isBlank()) {
