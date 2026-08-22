@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Mic
@@ -421,6 +422,14 @@ private fun ThinkingBubble(msg: Message) {
                 label,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (msg.error != null) Danger else Success,
+            )
+            Spacer(Modifier.width(4.dp))
+            // A visible expand affordance — without it, tapping the pill to see the real
+            // reasoning steps is a hidden gesture nobody discovers on their own.
+            Icon(
+                Icons.Default.ExpandMore, "Show thinking steps",
+                tint = if (msg.error != null) Danger else if (active) Accent else Success,
+                modifier = Modifier.size(15.dp),
             )
         }
     }

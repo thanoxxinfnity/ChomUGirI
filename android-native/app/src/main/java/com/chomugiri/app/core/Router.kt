@@ -30,29 +30,6 @@ private val GREETING = Regex(
 )
 
 /**
- * An explicit imperative verb + a real build target — "make a website", "banao ek app",
- * "build me a portfolio". Genuinely unambiguous, unlike a bare keyword like "app" which could
- * appear in an ordinary question. Checked before the AI classifier call: a small/free Fast Chat
- * model has, in real use, misjudged a clearly imperative build request as CHAT — this is a
- * structural safety net for that specific failure mode, not a guess at fixing it.
- */
-private val BUILD_VERBS = listOf(
-    "make", "build", "create", "banao", "bana do", "bana ke do", "bana kar do", "banaye",
-    "banaiye", "banwa do", "generate", "likh do", "code likho",
-)
-private val BUILD_TARGETS = listOf(
-    "website", "web app", "webapp", "app", "page", "site", "portfolio", "landing page",
-    "dashboard", "game", "script", "program", "component", "chatbot", "calculator",
-    "to-do", "todo list", "e-commerce", "ecommerce", "clone", "api", "backend", "endpoint",
-)
-
-private fun isHighConfidenceBuildRequest(lower: String): Boolean {
-    val hasVerb = BUILD_VERBS.any { containsKeyword(lower, it) }
-    val hasTarget = BUILD_TARGETS.any { containsKeyword(lower, it) }
-    return hasVerb && hasTarget
-}
-
-/**
  * "I want to build X, let's talk it through first" is not the same ask as "build X now" — the
  * user wants to plan/discuss, not have the swarm start writing files. These phrases keep a
  * message in chat even when it also contains a code keyword like "app" or "banao".
@@ -116,10 +93,13 @@ suspend fun classifyIntentAi(message: String, settings: AppSettings): Intent {
     if (trimmed.isEmpty()) return Intent.CHAT
     if (trimmed.length < 40 && GREETING.containsMatchIn(trimmed)) return Intent.CHAT
 
-    val lower = trimmed.lowercase()
-    if (DISCUSSION_PHRASES.none { lower.contains(it) } && isHighConfidenceBuildRequest(lower)) {
-        return Intent.PIPELINE
-    }
+    // The local heuristic's own CODE_KEYWORDS list is comprehensive and word-boundary-safe — when
+    // it already sees a clear build request, trust it outright instead of routing through the AI
+    // classifier first. In real use, a small/free Fast Chat model misjudged an unambiguous build
+    // request ("make a real website of full information") as CHAT — the TRIAGE_PROMPT below even
+    // biases it toward CHAT "when in doubt" — so it answered in prose with no files ever
+    // generated. This short-circuit is the structural fix for that failure mode, not a guess.
+    if (classifyIntent(trimmed) == Intent.PIPELINE) return Intent.PIPELINE
 
     return try {
         val raw = LlmClient.complete(

@@ -103,6 +103,18 @@ browser stylesheet is not done:
   load, and never leave an <img> with an empty or fake src. Use CSS shapes/gradients/icons
   instead of a marker for anything simple/decorative that doesn't need to be a photo.
 
+The bar is a page that could pass for a real product's marketing site — the kind Replit Agent or
+a competent freelance designer would ship — not a page that merely renders. Concretely avoid:
+- Generic Bootstrap/Tailwind-starter look: default blue/gray palette, default font stack, cards
+  that are just a border and padding with nothing distinguishing this brand from any other.
+- Lorem ipsum or "Company Name" / "Your Tagline Here" placeholder copy — write real, specific
+  copy for what was actually asked for, even if you have to invent plausible specifics.
+- A hero that's just a centered heading on a flat color with no imagery, gradient, or shape.
+- Icons as bare emoji dropped into a heading font — use inline SVG or a real icon approach.
+- Uniform, un-emphasized text — no size/weight hierarchy distinguishing headline from body from
+  caption.
+- Buttons/links with no hover or active state, so the page feels static even when it's not.
+
 $FILE_FORMAT_INSTRUCTIONS"""
 
 const val KIMI_FIX_SYSTEM_PROMPT = """You are Kimi K3. GLM 5.3 (the auditor) found issues in your code. Fix every issue listed and
