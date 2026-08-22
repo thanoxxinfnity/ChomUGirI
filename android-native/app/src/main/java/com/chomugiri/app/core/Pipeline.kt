@@ -36,7 +36,7 @@ fun runPipeline(
     val maxLoops = settings.maxAuditLoops.coerceIn(0, 8)
 
     try {
-        emit(PipelineEvent.Step("Kimi K3 is writing the code..."))
+        emit(PipelineEvent.Step("Kimi K3 is looking at your request..."))
         val kimiOut = LlmClient.complete(
             settings.provider(RoleKey.KIMI), "Kimi K3",
             listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT), ChatTurn("user", prompt)),
@@ -44,7 +44,15 @@ fun runPipeline(
         )
         files = parseFileBlocks(kimiOut)
         if (files.isEmpty()) {
-            emit(PipelineEvent.Failed("Kimi K3 didn't return a valid ### FILE: block — try a different model for the coder role in Settings."))
+            if (kimiOut.isBlank()) {
+                emit(PipelineEvent.Failed("Kimi K3 didn't return anything — try a different model for the coder role in Settings."))
+            } else {
+                // Kimi decided the request was too vague to build from and asked for detail
+                // instead (per its prompt) — that's a legitimate chat reply, not a failure.
+                emit(PipelineEvent.Step("Kimi K3 needs a bit more detail before building.", done = true))
+                emit(PipelineEvent.Chunk(kimiOut.trim()))
+                emit(PipelineEvent.Done(emptyList()))
+            }
             return@flow
         }
         emit(PipelineEvent.Files(files))
@@ -66,7 +74,7 @@ fun runPipeline(
                     temperature = 0.1, jsonMode = true,
                 )
             } catch (e: Exception) {
-                emit(PipelineEvent.Step("GLM audit failed (${e.message?.take(150)}) — skipping this round.", done = true))
+                emit(PipelineEvent.Step("GLM audit failed: ${e.message ?: "unknown error"} — skipping this round. (Settings > GLM 5.2 > Test connection shows the exact error.)", done = true))
                 break
             }
             val parsed = parseIssues(extractJsonObject(glmOut))
@@ -100,7 +108,7 @@ fun runPipeline(
                     maxTokens = 8192,
                 )
             } catch (e: Exception) {
-                emit(PipelineEvent.Step("Kimi's fix call failed (${e.message?.take(150)}) — keeping the last working version.", done = true))
+                emit(PipelineEvent.Step("Kimi's fix call failed: ${e.message ?: "unknown error"} — keeping the last working version.", done = true))
                 break
             }
             val fixed = parseFileBlocks(fixOut)
@@ -133,7 +141,7 @@ fun runPipeline(
                 }
                 emit(PipelineEvent.Step("DeepSeek R1's fix applied.", done = true))
             } catch (e: Exception) {
-                emit(PipelineEvent.Step("DeepSeek R1 fallback failed (${e.message?.take(150)}) — keeping GLM's last version.", done = true))
+                emit(PipelineEvent.Step("DeepSeek R1 fallback failed: ${e.message ?: "unknown error"} — keeping GLM's last version.", done = true))
             }
         }
 
@@ -170,7 +178,7 @@ fun runPipeline(
                     )
                 )
             } catch (e: Exception) {
-                emit(PipelineEvent.Step("Nemotron safety check failed (${e.message?.take(150)}) — shipping the last working version.", done = true))
+                emit(PipelineEvent.Step("Nemotron safety check failed: ${e.message ?: "unknown error"} — shipping the last working version.", done = true))
             }
         } else {
             emit(PipelineEvent.Step("LITE tier — skipping audit and safety passes for speed.", done = true))
@@ -183,7 +191,7 @@ fun runPipeline(
                 emit(PipelineEvent.Files(files))
             }
         } catch (e: Exception) {
-            emit(PipelineEvent.Step("Image generation step failed (${e.message?.take(150)}) — shipping without it.", done = true))
+            emit(PipelineEvent.Step("Image generation step failed: ${e.message ?: "unknown error"} — shipping without it.", done = true))
         }
 
         emit(PipelineEvent.Done(files, resolvedByParts.joinToString(" + "), issuesToText(lastIssues).lines().filter { it.isNotBlank() }))

@@ -53,7 +53,7 @@ suspend fun resolveImageMarkers(
                 onProgress("Generating image: ${desc.take(60)}...")
                 GeminiClient.generateImageDataUri(settings.geminiApiKey, settings.geminiModel, desc)
             } catch (e: Exception) {
-                onProgress("Image generation failed (${e.message?.take(120)}) — using a placeholder.")
+                onProgress("Image generation failed: ${e.message ?: "unknown error"} — using a placeholder. (Settings > Image Generation > Test the key if this keeps happening.)")
                 placeholderDataUri(desc)
             }
         } else {

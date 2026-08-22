@@ -217,6 +217,8 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 Field("Model", settings.geminiModel) { v ->
                     vm.updateSettings { it.copy(geminiModel = v) }
                 }
+                Spacer(Modifier.height(10.dp))
+                GeminiHealthCheck(settings.geminiApiKey, settings.geminiModel)
             }
 
             Section("Deploy") {
@@ -295,6 +297,47 @@ private fun ProviderHealthCheck(role: RoleKey, cfg: ProviderConfig) {
                 maxLines = 1,
             )
             null -> Unit
+        }
+    }
+}
+
+/** A real, tiny image-generation call — proves the Gemini key/model actually work end to end. */
+@Composable
+private fun GeminiHealthCheck(apiKey: String, model: String) {
+    var state by remember(apiKey, model) { mutableStateOf<PingUiState?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = {
+                    state = PingUiState.Loading
+                    scope.launch {
+                        val started = System.currentTimeMillis()
+                        state = try {
+                            com.chomugiri.app.net.GeminiClient.generateImageDataUri(apiKey, model, "a small blue circle on a white background")
+                            PingUiState.Done(true, System.currentTimeMillis() - started, "OK")
+                        } catch (e: Exception) {
+                            PingUiState.Done(false, System.currentTimeMillis() - started, e.message ?: "Failed")
+                        }
+                    }
+                },
+                enabled = state !is PingUiState.Loading && apiKey.isNotBlank(),
+            ) {
+                Icon(Icons.Default.NetworkCheck, null, tint = Accent2, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Test image generation", color = Accent2, style = MaterialTheme.typography.bodySmall)
+            }
+            if (state is PingUiState.Loading) {
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Accent2)
+            } else if (state is PingUiState.Done && (state as PingUiState.Done).ok) {
+                Text("OK · ${(state as PingUiState.Done).latencyMs}ms", style = MaterialTheme.typography.labelSmall, color = Success)
+            }
+        }
+        (state as? PingUiState.Done)?.let { s ->
+            if (!s.ok) {
+                Text(s.message, style = MaterialTheme.typography.labelSmall, color = Danger, modifier = Modifier.padding(top = 4.dp))
+            }
         }
     }
 }

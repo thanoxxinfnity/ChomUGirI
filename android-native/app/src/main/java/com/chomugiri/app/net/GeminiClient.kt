@@ -44,7 +44,10 @@ object GeminiClient {
                         )
                     ),
                 )
-                .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("IMAGE")))
+                // Google's image-capable Gemini models reject a responseModalities that asks for
+                // IMAGE alone — TEXT has to be listed alongside it even though the text part is
+                // discarded below, or the call itself 400s.
+                .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("TEXT").put("IMAGE")))
 
             val req = Request.Builder()
                 .url("https://generativelanguage.googleapis.com/v1beta/models/$safeModel:generateContent?key=$apiKey")
@@ -59,9 +62,11 @@ object GeminiClient {
                     throw GeminiException("Gemini returned an unexpected response (HTTP ${resp.code}).")
                 }
                 if (!resp.isSuccessful) {
-                    val msg = json.optJSONObject("error")?.optString("message")
-                        ?: "Gemini image request failed (HTTP ${resp.code})"
-                    throw GeminiException(msg)
+                    val apiMsg = json.optJSONObject("error")?.optString("message")
+                    throw GeminiException(
+                        if (apiMsg.isNullOrBlank()) "Gemini image request failed (HTTP ${resp.code}): ${text.take(300)}"
+                        else "Gemini image request failed (HTTP ${resp.code}): $apiMsg"
+                    )
                 }
                 val parts = json.optJSONArray("candidates")
                     ?.optJSONObject(0)
