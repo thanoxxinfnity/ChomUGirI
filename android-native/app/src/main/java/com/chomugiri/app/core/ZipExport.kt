@@ -17,7 +17,7 @@ fun writeArtifactZip(context: Context, uri: Uri, artifact: Artifact): Int {
                 val safePath = f.path.trimStart('/').replace("..", "_")
                 if (safePath.isBlank()) continue
                 zip.putNextEntry(ZipEntry(safePath))
-                zip.write(f.content.toByteArray(Charsets.UTF_8))
+                zip.write(f.rawBytes())
                 zip.closeEntry()
                 written++
             }

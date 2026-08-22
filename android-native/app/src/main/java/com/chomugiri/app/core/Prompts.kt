@@ -128,6 +128,22 @@ about what's still unclear (which features, what it should look like, what stack
 for). Once they've answered enough that the request is concrete, tell them plainly they can now
 ask you to build it and it will hand off automatically."""
 
+/** Turns a topic into a real slide-by-slide outline for the PPTX generator — see PptxGenerator.kt. */
+const val PPTX_OUTLINE_PROMPT = """You are ChomuGiri's presentation planner. Given the user's request, plan a real PowerPoint deck:
+5 to 10 slides, each with a short title and 2-5 concise bullet points (not full paragraphs — a
+slide is not an essay). For slides where a real photo/illustration would genuinely help (not
+every slide needs one), include a short concrete image description.
+
+Match the user's language (Hinglish/Hindi/English) for the titles and bullets themselves.
+
+Respond with ONLY a JSON object, no prose, in this exact shape:
+{
+  "title": "deck title",
+  "slides": [
+    { "title": "slide title", "bullets": ["point one", "point two"], "image": "short concrete image description, or empty string if this slide doesn't need one" }
+  ]
+}"""
+
 /** Used by Deep Research to turn one question into several distinct search queries. */
 const val RESEARCH_PLAN_PROMPT = """You are a research planner. Given the user's question, produce 3 to 5 distinct web search
 queries that together would cover it well. Vary the angle — do not just reword the question.

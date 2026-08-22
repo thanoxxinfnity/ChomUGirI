@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.VpnKey
@@ -106,9 +107,7 @@ fun ChatScreen(
 
         Composer(
             busy = busy,
-            onSend = { text, forceResearch ->
-                vm.send(text, if (forceResearch) com.chomugiri.app.core.Intent.RESEARCH else null)
-            },
+            onSend = { text, forcedIntent -> vm.send(text, forcedIntent) },
             onStop = { activeId?.let { vm.stop(it) } },
             latestArtifact = artifacts.maxByOrNull { it.createdAt },
             onOpenCanvas = onOpenArtifact,
@@ -614,7 +613,7 @@ private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Uni
 @Composable
 private fun Composer(
     busy: Boolean,
-    onSend: (String, Boolean) -> Unit,
+    onSend: (String, com.chomugiri.app.core.Intent?) -> Unit,
     onStop: () -> Unit,
     latestArtifact: Artifact? = null,
     onOpenCanvas: (String) -> Unit = {},
@@ -624,7 +623,8 @@ private fun Composer(
 ) {
     var text by remember { mutableStateOf("") }
     var toolsOpen by remember { mutableStateOf(false) }
-    var researchMode by remember { mutableStateOf(false) }
+    // Explicit tools the user opts into from the "+" menu — never auto-guessed by the router.
+    var pickedIntent by remember { mutableStateOf<com.chomugiri.app.core.Intent?>(null) }
     var attachedName by remember { mutableStateOf<String?>(null) }
     var forcedRole by remember { mutableStateOf<com.chomugiri.app.core.RoleKey?>(null) }
     var roleMenuOpen by remember { mutableStateOf(false) }
@@ -738,7 +738,7 @@ private fun Composer(
                 }
             }
 
-            if (researchMode) {
+            if (pickedIntent != null) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -746,11 +746,14 @@ private fun Composer(
                     Surface(color = Accent2.copy(alpha = 0.15f), shape = RoundedCornerShape(12.dp)) {
                         Row(
                             Modifier
-                                .clickable { researchMode = false }
+                                .clickable { pickedIntent = null }
                                 .padding(horizontal = 10.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("Deep Research", style = MaterialTheme.typography.labelSmall, color = Accent2)
+                            Text(
+                                if (pickedIntent == com.chomugiri.app.core.Intent.PPTX) "Create a PPT" else "Deep Research",
+                                style = MaterialTheme.typography.labelSmall, color = Accent2,
+                            )
                             Spacer(Modifier.width(6.dp))
                             Icon(Icons.Default.Close, "Cancel", tint = Accent2, modifier = Modifier.size(12.dp))
                         }
@@ -781,16 +784,29 @@ private fun Composer(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text(if (researchMode) "Deep Research (on)" else "Deep Research") },
+                            text = { Text(if (pickedIntent == com.chomugiri.app.core.Intent.RESEARCH) "Deep Research (on)" else "Deep Research") },
                             leadingIcon = {
                                 Icon(
                                     Icons.Default.TravelExplore, null,
-                                    tint = if (researchMode) Accent else FgMuted,
+                                    tint = if (pickedIntent == com.chomugiri.app.core.Intent.RESEARCH) Accent else FgMuted,
                                 )
                             },
                             onClick = {
                                 toolsOpen = false
-                                researchMode = !researchMode
+                                pickedIntent = if (pickedIntent == com.chomugiri.app.core.Intent.RESEARCH) null else com.chomugiri.app.core.Intent.RESEARCH
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (pickedIntent == com.chomugiri.app.core.Intent.PPTX) "Create a PPT (on)" else "Create a PPT (with images)") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Slideshow, null,
+                                    tint = if (pickedIntent == com.chomugiri.app.core.Intent.PPTX) Accent else FgMuted,
+                                )
+                            },
+                            onClick = {
+                                toolsOpen = false
+                                pickedIntent = if (pickedIntent == com.chomugiri.app.core.Intent.PPTX) null else com.chomugiri.app.core.Intent.PPTX
                             },
                         )
                         DropdownMenuItem(
@@ -843,8 +859,8 @@ private fun Composer(
                 fun doSend() {
                     val t = text.trim()
                     if (t.isEmpty()) return
-                    forcedRole?.let { onSendWithRole(t, it) } ?: onSend(t, researchMode)
-                    text = ""; researchMode = false; attachedName = null
+                    forcedRole?.let { onSendWithRole(t, it) } ?: onSend(t, pickedIntent)
+                    text = ""; pickedIntent = null; attachedName = null
                 }
                 FilledIconButton(
                     onClick = { if (busy) onStop() else doSend() },

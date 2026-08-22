@@ -399,6 +399,25 @@ private fun CodeView(vm: AppViewModel, artifact: Artifact, selectedPath: String?
             return@Column
         }
 
+        if (current.encoding == "base64") {
+            // A real binary file (e.g. a .pptx) — showing its base64 as "code" would be useless
+            // and editing/saving it as text would corrupt it, so this is a real dead end by
+            // design, not a missing feature: Export .zip / Share above actually saves the bytes.
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.InsertDriveFile, null, tint = FgMuted, modifier = Modifier.size(40.dp))
+                    Spacer(Modifier.height(8.dp))
+                    Text(current.path, color = FgPrimary, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Binary file (${"%.1f".format(current.rawBytes().size / 1024.0)} KB) — use Export .zip or Share above to save it.",
+                        color = FgMuted, style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            return@Column
+        }
+
         Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1000,7 +1019,7 @@ private fun shareArtifactZip(context: android.content.Context, artifact: Artifac
                     val safe = f.path.trimStart('/').replace("..", "_")
                     if (safe.isBlank()) return@forEach
                     zip.putNextEntry(java.util.zip.ZipEntry(safe))
-                    zip.write(f.content.toByteArray(Charsets.UTF_8))
+                    zip.write(f.rawBytes())
                     zip.closeEntry()
                 }
             }

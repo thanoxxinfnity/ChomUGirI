@@ -95,7 +95,19 @@ val POWER_TIERS = listOf(
 data class ChatTurn(val role: String, val content: String)
 
 @Serializable
-data class GeneratedFile(val path: String, val content: String)
+data class GeneratedFile(
+    val path: String,
+    val content: String,
+    /** "text" (default, UTF-8) or "base64" — a real binary file like a .pptx stores its bytes as
+     * base64 in [content] since a project's files are otherwise plain UTF-8 text. */
+    val encoding: String = "text",
+)
+
+/** The file's real bytes — base64-decoded for a binary file, UTF-8 otherwise. Always what should
+ * actually be written to disk; never assume [GeneratedFile.content] is safe to write as text. */
+fun GeneratedFile.rawBytes(): ByteArray =
+    if (encoding == "base64") android.util.Base64.decode(content, android.util.Base64.NO_WRAP)
+    else content.toByteArray(Charsets.UTF_8)
 
 @Serializable
 data class BuildAttempt(

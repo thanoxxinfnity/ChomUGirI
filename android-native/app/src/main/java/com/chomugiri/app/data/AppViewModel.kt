@@ -208,11 +208,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             Intent.CHAT -> "chat"
                             Intent.PIPELINE -> "pipeline"
                             Intent.RESEARCH -> "research"
+                            Intent.PPTX -> "pipeline"
                         },
                         modelUsed = when {
                             forcedRole != null -> ROLE_LABELS[forcedRole]
                             intent == Intent.CHAT -> ROLE_LABELS[RoleKey.FAST]
                             intent == Intent.RESEARCH -> "Deep Research"
+                            intent == Intent.PPTX -> "PPTX Generator"
                             else -> null
                         },
                     )
@@ -230,6 +232,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         consume(convId, assistantId, runPipeline(text, s, history), text)
                     }
                     Intent.RESEARCH -> consume(convId, assistantId, runDeepResearch(text, s), text)
+                    Intent.PPTX -> consume(convId, assistantId, runPptxPipeline(text, s), text)
                 }
             } catch (e: Exception) {
                 updateMessage(convId, assistantId) {

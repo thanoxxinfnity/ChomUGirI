@@ -2,7 +2,9 @@ package com.chomugiri.app.core
 
 import com.chomugiri.app.net.LlmClient
 
-enum class Intent { CHAT, PIPELINE, RESEARCH }
+// PPTX is never auto-detected by the router below — the user picks it explicitly from the
+// composer's "+" tools menu, the same way Deep Research is opted into rather than guessed at.
+enum class Intent { CHAT, PIPELINE, RESEARCH, PPTX }
 
 private val CODE_KEYWORDS = listOf(
     "app", "website", "web app", "webapp", "build", "banao", "bana do", "bana ke do",
