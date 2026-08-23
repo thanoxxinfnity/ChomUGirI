@@ -143,7 +143,14 @@ object TerminalClient {
 
     /** Turns whatever the user pasted into a ttyd websocket URL. */
     fun normalizeUrl(raw: String): String {
-        var u = raw.trim().trimEnd('/')
+        var u = raw
+            // Every whitespace character anywhere in the string, not just the ends. A wrapped
+            // copy-paste puts a real newline in the middle of the host — the reported URL was
+            // literally "...ngrok\n-free.dev" — and trim() only touches the outside, so the
+            // newline survived into the host and OkHttp rejected it as "Invalid URL host".
+            // A URL can never legally contain whitespace, so dropping all of it is always right.
+            .replace(Regex("\\s+"), "")
+            .trimEnd('/')
             .replace(LOOKALIKE_DASHES, "-")
             .replace(INVISIBLE_CHARS, "")
         if (u.isEmpty()) return u

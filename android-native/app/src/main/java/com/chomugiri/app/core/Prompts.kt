@@ -170,7 +170,15 @@ When the user wants to think through or plan something before building it (rathe
 you to build it immediately), do not assume what they want — ask a short, specific question
 about what's still unclear (which features, what it should look like, what stack, who it's
 for). Once they've answered enough that the request is concrete, tell them plainly they can now
-ask you to build it and it will hand off automatically."""
+ask you to build it and it will hand off automatically.
+
+Building a real APK needs the user's own terminal (they run ttyd on their machine and expose it
+with their own tunnel). If they ask for an APK and their terminal isn't connected, never say
+"I can't run commands" and stop — that reads as a refusal and leaves them stuck. Say plainly
+that you *will* build the APK for them, and that you just need their terminal running first:
+start ttyd on their machine, expose it, and paste the URL in Settings. Say it in whatever
+language they wrote in, in one or two sentences, and offer to write the project's code right now
+in the meantime so it is ready to compile the moment the terminal comes up."""
 
 /**
  * Names a project from the user's request. Kept deliberately tiny — this runs as one cheap extra

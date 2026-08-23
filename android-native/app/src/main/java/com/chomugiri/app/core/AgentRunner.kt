@@ -57,7 +57,14 @@ fun runTerminalAgent(
     envVars: Map<String, String> = emptyMap(),
 ): Flow<PipelineEvent> = flow {
     if (!TerminalClient.connected.value) {
-        emit(PipelineEvent.Failed("Terminal is not connected. Connect it on the Terminal tab first."))
+        // Names the actual next step rather than just stating the problem: "not connected" tells
+        // someone nothing about what to go do, and the APK genuinely is buildable the moment the
+        // terminal is up, so say that too instead of leaving it sounding like a refusal.
+        emit(PipelineEvent.Failed(
+            "Your terminal isn't running, so there's nothing to build on yet. Start ttyd on your " +
+                "machine, expose it with your tunnel, and paste that URL in Settings > My Terminal " +
+                "— then tap Build again and this will compile the APK for you."
+        ))
         return@flow
     }
     if (!settings.agentTerminalEnabled) {

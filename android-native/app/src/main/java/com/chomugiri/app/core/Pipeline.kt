@@ -59,6 +59,59 @@ internal fun extractPromptScore(text: String): Triple<Int?, String?, String> {
  * list of real reasoning lines for the Thinking bubble — genuinely what the model reasoned, not
  * a fabricated progress message. Returns (steps, textWithThinkingBlockRemoved).
  */
+private val FILE_HEADER_LINE = Regex("###\\s*FILE:\\s*(.+)")
+
+/**
+ * Turns the coder's raw stream into progress lines *while it is still generating*.
+ *
+ * The coder call used to be a buffered complete(), so nothing reached the UI until the whole
+ * response landed — a single frozen "looking at your request..." for minutes on a big build. The
+ * model is actually narrating the entire time inside its <thinking> block and announcing each
+ * file as it starts writing it; this surfaces that as it arrives instead of after the fact.
+ *
+ * Only whole lines are emitted. A half-arrived line would otherwise show up as a truncated step
+ * and then be replaced a few tokens later, which reads as flicker rather than progress.
+ */
+private class CoderStreamProgress {
+    private val buf = StringBuilder()
+    private var cursor = 0
+    private var insideThinking = false
+    private val seenFiles = LinkedHashSet<String>()
+
+    fun feed(chunk: String): List<String> {
+        buf.append(chunk)
+        val out = mutableListOf<String>()
+        while (true) {
+            val nl = buf.indexOf("\n", cursor)
+            if (nl < 0) break
+            val line = buf.substring(cursor, nl).trim()
+            cursor = nl + 1
+            when {
+                line.contains("<thinking>", ignoreCase = true) -> insideThinking = true
+                line.contains("</thinking>", ignoreCase = true) -> insideThinking = false
+                insideThinking -> {
+                    val t = line.trimStart('-', '*', '\u2022').trim()
+                    if (t.isNotEmpty()) out += t
+                }
+                else -> FILE_HEADER_LINE.find(line)?.let { m ->
+                    val path = m.groupValues[1].trim().trimStart('/')
+                    // Each file announced once, the first time its header appears.
+                    if (path.isNotEmpty() && seenFiles.add(path)) out += "Writing $path"
+                }
+            }
+        }
+        return out
+    }
+}
+
+/**
+ * What to call a role in progress text. Uses the model the user actually configured rather than
+ * the role's nickname — the bubble said "Kimi K3" even after switching the coder to something
+ * else entirely, which is just a lie about what is running.
+ */
+private fun modelLabel(cfg: ProviderConfig, fallback: String): String =
+    cfg.model.substringAfterLast('/').substringBefore(':').ifBlank { fallback }
+
 internal fun extractThinking(raw: String): Pair<List<String>, String> {
     val match = THINKING_BLOCK.find(raw) ?: return emptyList<String>() to raw
     val lines = match.groupValues[1]
@@ -87,14 +140,25 @@ fun runPipeline(
     val maxLoops = settings.maxAuditLoops.coerceIn(0, 8)
 
     try {
-        emit(PipelineEvent.Step("Kimi K3 is looking at your request..."))
-        val rawKimiOut = LlmClient.complete(
-            settings.provider(RoleKey.KIMI), "Kimi K3",
+        val coderCfg = settings.provider(RoleKey.KIMI)
+        val coder = modelLabel(coderCfg, "The coder")
+        emit(PipelineEvent.Step("$coder is reading your request..."))
+
+        // Streamed, not buffered: every reasoning line and every file the model announces shows
+        // up in the bubble as it happens, instead of one frozen step for the whole generation.
+        val progress = CoderStreamProgress()
+        val kimiBuf = StringBuilder()
+        LlmClient.stream(
+            coderCfg, coder,
             listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", prompt),
             maxTokens = 8192,
-        )
-        val (thinkingSteps, thinkingStripped) = extractThinking(rawKimiOut)
-        thinkingSteps.forEach { emit(PipelineEvent.Step(it, done = true)) }
+        ).collect { chunk ->
+            kimiBuf.append(chunk)
+            progress.feed(chunk).forEach { emit(PipelineEvent.Step(it, done = true)) }
+        }
+        val rawKimiOut = kimiBuf.toString()
+        // Thinking lines already streamed above; this only strips the block from the text.
+        val (_, thinkingStripped) = extractThinking(rawKimiOut)
         val (promptScore, scoreColor, scoreStripped) = extractPromptScore(thinkingStripped)
         if (promptScore != null) {
             emit(PipelineEvent.Step("Prompt score: $promptScore/100" + (scoreColor?.let { " ($it)" } ?: ""), done = true))
@@ -104,11 +168,11 @@ fun runPipeline(
         files = parseFileBlocks(kimiOut)
         if (files.isEmpty()) {
             if (kimiOut.isBlank()) {
-                emit(PipelineEvent.Failed("Kimi K3 didn't return anything — try a different model for the coder role in Settings."))
+                emit(PipelineEvent.Failed("$coder returned nothing — try a different model for the coder role in Settings."))
             } else {
                 // Kimi decided the request was too vague to build from and asked for detail
                 // instead (per its prompt) — that's a legitimate chat reply, not a failure.
-                emit(PipelineEvent.Step("Kimi K3 needs a bit more detail before building.", done = true))
+                emit(PipelineEvent.Step("$coder needs a bit more detail before building.", done = true))
                 emit(PipelineEvent.Chunk(kimiOut.trim()))
                 emit(PipelineEvent.Done(emptyList()))
             }
@@ -153,7 +217,7 @@ fun runPipeline(
 
             if (clean || i == maxLoops) break
 
-            emit(PipelineEvent.Step("Kimi K3 is fixing issues (round $i)..."))
+            emit(PipelineEvent.Step("$coder is fixing issues (round $i)..."))
             val fixOut = try {
                 LlmClient.complete(
                     settings.provider(RoleKey.KIMI), "Kimi K3",
@@ -167,7 +231,7 @@ fun runPipeline(
                     maxTokens = 8192,
                 )
             } catch (e: Exception) {
-                emit(PipelineEvent.Step("Kimi's fix call failed: ${e.message ?: "unknown error"} — keeping the last working version.", done = true))
+                emit(PipelineEvent.Step("$coder's fix call failed: ${e.message ?: "unknown error"} — keeping the last working version.", done = true))
                 break
             }
             val fixed = parseFileBlocks(fixOut)
