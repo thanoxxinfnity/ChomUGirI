@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.chomugiri.app.MainActivity
 import com.chomugiri.app.R
 
@@ -71,7 +72,15 @@ class BuildService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "chomugiri_builds"
+        /**
+         * Separate channel for the "it's finished" alert. The progress channel is IMPORTANCE_LOW
+         * so it never makes a sound while working; the result is the one thing worth an actual
+         * notification, so it gets DEFAULT importance and its own entry in Android's settings —
+         * meaning the user can silence progress and keep results, or the reverse.
+         */
+        private const val DONE_CHANNEL_ID = "chomugiri_build_done"
         private const val NOTIF_ID = 4201
+        private const val DONE_NOTIF_ID = 4202
         private const val EXTRA_STATUS = "status"
 
         private fun ensureChannel(context: Context) {
@@ -84,6 +93,43 @@ class BuildService : Service() {
                     setShowBadge(false)
                 }
             )
+        }
+
+        private fun ensureDoneChannel(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+            val mgr = context.getSystemService(NotificationManager::class.java) ?: return
+            if (mgr.getNotificationChannel(DONE_CHANNEL_ID) != null) return
+            mgr.createNotificationChannel(
+                NotificationChannel(DONE_CHANNEL_ID, "Build finished", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "Tells you when a build has finished, succeeded or failed."
+                }
+            )
+        }
+
+        /**
+         * The completion alert. Only posted when the app is in the background — if the user is
+         * looking at the result already, a notification about it is pure noise.
+         */
+        fun notifyFinished(context: Context, title: String, detail: String) {
+            ensureDoneChannel(context)
+            val open = PendingIntent.getActivity(
+                context, 1,
+                Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val n = NotificationCompat.Builder(context, DONE_CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(title)
+                .setContentText(detail)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(open)
+                .build()
+            runCatching {
+                NotificationManagerCompat.from(context).notify(DONE_NOTIF_ID, n)
+            }
         }
 
         /** Starts the service, or updates its notification text if it is already running. */

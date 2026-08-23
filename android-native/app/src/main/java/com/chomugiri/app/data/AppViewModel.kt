@@ -79,6 +79,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var autoConnectJob: Job? = null
     private var loaded = false
 
+    /**
+     * Whether the UI is actually on screen. A "build finished" notification is useful when the
+     * user is off in another app; firing one while they are watching the result appear is noise.
+     */
+    private var uiVisible = true
+    fun onUiVisible(visible: Boolean) { uiVisible = visible }
+
+    private fun notifyIfAway(title: String, detail: String) {
+        if (!uiVisible) BuildService.notifyFinished(getApplication(), title, detail)
+    }
+
     init {
         viewModelScope.launch {
             store.settings.collect { raw ->
@@ -311,9 +322,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(streaming = false, error = e.message ?: "Something went wrong.")
                 }
             } finally {
+                val finished = conversationById(convId)?.messages?.firstOrNull { it.id == assistantId }
                 updateMessage(convId, assistantId) { it.copy(streaming = false) }
                 jobs.remove(convId)
                 syncBusy()
+                // Announced once the job is off the books, so a still-running sibling keeps the
+                // progress notification and only the actually-finished one reports.
+                finished?.let { m ->
+                    val title = conversationById(convId)?.title ?: "ChomuGiri"
+                    if (m.error != null) notifyIfAway("Build failed - " + title, m.error)
+                    else notifyIfAway("Done - " + title, m.content.take(120).ifBlank { "Your project is ready." })
+                }
                 persistConversations()
             }
         }

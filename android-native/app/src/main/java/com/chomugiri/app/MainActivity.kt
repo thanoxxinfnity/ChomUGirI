@@ -44,6 +44,11 @@ class MainActivity : ComponentActivity() {
         if (!granted) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    // Drives whether a finished build is worth a notification: if the user is already looking
+    // at the screen the result lands on, it isn't.
+    override fun onStart() { super.onStart(); vm.onUiVisible(true) }
+    override fun onStop() { super.onStop(); vm.onUiVisible(false) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
