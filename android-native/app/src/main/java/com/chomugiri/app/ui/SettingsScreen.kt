@@ -14,6 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.chomugiri.app.core.*
@@ -263,7 +266,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     color = FgMuted,
                 )
                 Spacer(Modifier.height(10.dp))
-                Field("Terminal URL (https:// or wss://)", settings.terminalUrl) { v ->
+                Field("Terminal URL (https:// or wss://)", settings.terminalUrl, uri = true) { v ->
                     vm.updateSettings { it.copy(terminalUrl = v) }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -664,6 +667,15 @@ private fun Field(
     label: String,
     value: String,
     secret: Boolean = false,
+    /**
+     * For a URL/key field, not prose. Without this the field falls back to a text keyboard whose
+     * autocorrect can silently swap a typed "-" for a lookalike Unicode dash — invisible on
+     * screen, but it breaks OkHttp's URL parsing outright. Verified: KeyboardType.Uri plus
+     * disabled autocorrect/auto-capitalization is what actually stops that at the source: a real
+     * hyphen typed stays a real hyphen. TerminalClient.normalizeUrl() still sanitizes as a second
+     * line of defense for anything pasted in from outside the app.
+     */
+    uri: Boolean = false,
     onChange: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -674,6 +686,13 @@ private fun Field(
         singleLine = true,
         shape = RoundedCornerShape(12.dp),
         visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        keyboardOptions = if (secret || uri) {
+            KeyboardOptions(
+                keyboardType = if (uri) KeyboardType.Uri else KeyboardType.Password,
+                capitalization = KeyboardCapitalization.None,
+                autoCorrectEnabled = false,
+            )
+        } else KeyboardOptions.Default,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = Accent.copy(alpha = 0.6f),
             unfocusedBorderColor = BorderCol,

@@ -129,9 +129,23 @@ object TerminalClient {
 
     private val captures = mutableListOf<Capture>()
 
+    /**
+     * A phone keyboard's autocorrect can silently swap a typed "-" for a lookalike Unicode dash —
+     * invisible in a monospace terminal font, but OkHttp's HttpUrl rejects the resulting host
+     * outright ("Invalid URL host") since it is no longer plain ASCII. Verified live: the exact
+     * same hostname retyped with a real ASCII hyphen resolves fine over the network; only the
+     * substituted character breaks it. Mapped back to ASCII here so a hand-typed URL can't
+     * silently stop working this way. Written entirely as \u escapes below, not literal
+     * characters, so this fix can't itself fall victim to the same class of mangling.
+     */
+    private val LOOKALIKE_DASHES = "[\u2010\u2011\u2012\u2013\u2014\u2212]".toRegex()
+    private val INVISIBLE_CHARS = "[\u00a0\u2009\u200a\u2007\u2008\u2002\u2003\u200b\u200c\u200d\u3000\ufeff]".toRegex()
+
     /** Turns whatever the user pasted into a ttyd websocket URL. */
     fun normalizeUrl(raw: String): String {
         var u = raw.trim().trimEnd('/')
+            .replace(LOOKALIKE_DASHES, "-")
+            .replace(INVISIBLE_CHARS, "")
         if (u.isEmpty()) return u
         u = when {
             u.startsWith("http://") -> "ws://" + u.removePrefix("http://")

@@ -540,6 +540,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnectTerminal() = TerminalClient.disconnect()
 
+    /**
+     * Previously the agent just refused to run ("Connect it on the Terminal tab first") if the
+     * socket wasn't already open — even though it already has everything it needs (URL, token) to
+     * connect itself. Now it does: one real connection attempt, waiting for the handshake to
+     * actually complete (or fail) rather than firing-and-hoping, since TerminalClient.connect()
+     * only starts the async connect and returns immediately.
+     */
+    private suspend fun ensureTerminalConnected(timeoutMs: Long = 20_000): Boolean {
+        if (TerminalClient.connected.value) return true
+        val s = _settings.value
+        if (s.terminalUrl.isBlank()) return false
+        TerminalClient.connect(s.terminalUrl, s.terminalAuthToken)
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < timeoutMs) {
+            if (TerminalClient.connected.value) return true
+            delay(300)
+        }
+        return TerminalClient.connected.value
+    }
+
     fun runAgent(
         goal: String,
         files: List<GeneratedFile>,
@@ -560,6 +580,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         _agentLog.value = "Cancelled — compile was not confirmed."
                         return@launch
                     }
+                }
+                if (!TerminalClient.connected.value) {
+                    appendAgentLog("\n• Connecting to your terminal...")
+                    val connectedNow = ensureTerminalConnected()
+                    if (!connectedNow) {
+                        val why = TerminalClient.status.value
+                        lastLine = "Couldn't connect to your terminal ($why). Check the URL on the Terminal tab."
+                        appendAgentLog("\n\n[!] $lastLine")
+                        return@launch
+                    }
+                    appendAgentLog(" connected.")
                 }
                 runTerminalAgent(
                     goal, _settings.value, files,
