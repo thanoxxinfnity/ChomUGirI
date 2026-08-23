@@ -384,8 +384,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 LlmClient.complete(
                     _settings.value.provider(RoleKey.FAST), "Namer",
                     listOf(ChatTurn("user", PROJECT_NAME_PROMPT.format(prompt.take(300)))),
-                    temperature = 0.3, maxTokens = 16,
-                ).trim().trim('"', '\'', '.', '`').lines().first().trim()
+                    // Not 16 — a reasoning model burns the whole budget thinking and returns its
+                    // scratchpad instead of a name (verified live against NIM).
+                    temperature = 0.3, maxTokens = 512,
+                    // A chatty model may explain itself first; the name is the last real line.
+                ).trim().lines().last { it.isNotBlank() }.trim().trim('"', '\'', '.', '`', '*')
             } catch (e: Exception) {
                 return@launch
             }

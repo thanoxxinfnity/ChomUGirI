@@ -115,9 +115,33 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 }) { Text("Use recommended models for all roles", color = Accent2) }
             }
 
-            ROLE_ORDER.forEach { role ->
+            Section("How many models?") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = settings.singleModelMode,
+                        onCheckedChange = { on -> vm.updateSettings { it.copy(singleModelMode = on) } },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Accent),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Use one model for everything", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "On: chat, routing, coding, audit and safety all run on the coder's " +
+                                "model below — set up one model and you're done. Off: each role " +
+                                "uses its own model, which is better if you have access to several.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = FgMuted,
+                        )
+                    }
+                }
+            }
+
+            val visibleRoles = if (settings.singleModelMode) listOf(RoleKey.KIMI) else ROLE_ORDER
+            visibleRoles.forEach { role ->
                 val cfg = settings.provider(role)
-                Section(ROLE_LABELS[role] ?: role.name) {
+                val sectionTitle =
+                    if (settings.singleModelMode) "Your model" else (ROLE_LABELS[role] ?: role.name)
+                Section(sectionTitle) {
                     Field("API key", cfg.apiKey, secret = true) { v ->
                         vm.updateSettings { it.withProvider(role, it.provider(role).copy(apiKey = v)) }
                     }

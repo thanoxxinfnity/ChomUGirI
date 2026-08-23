@@ -58,9 +58,19 @@ data class AppSettings(
      * free HF account's own token, with a small monthly credit (not unlimited). */
     val huggingfaceToken: String = "",
     val huggingfaceVideoModel: String = com.chomugiri.app.net.HF_DEFAULT_VIDEO_MODEL_PATH,
+    /**
+     * Run every role on one model instead of five. Five separate roles is the right shape when
+     * you have broad access, but it is a real barrier when you only have one model available —
+     * so this collapses them onto the coder's config, which is the one that has to be capable
+     * enough for the app's actual job. A model that can code can also chat; the reverse is not
+     * reliably true, which is why the coder is the one kept.
+     */
+    val singleModelMode: Boolean = false,
 ) {
-    fun provider(role: RoleKey): ProviderConfig =
-        providers[role.name] ?: ProviderConfig(model = defaultModelFor(role))
+    fun provider(role: RoleKey): ProviderConfig {
+        val effective = if (singleModelMode) RoleKey.KIMI else role
+        return providers[effective.name] ?: ProviderConfig(model = defaultModelFor(effective))
+    }
 
     fun withProvider(role: RoleKey, cfg: ProviderConfig): AppSettings =
         copy(providers = providers.toMutableMap().apply { put(role.name, cfg) })

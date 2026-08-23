@@ -159,14 +159,22 @@ object LlmClient {
     /** Result of a real, minimal round-trip to a provider — used by the Settings health check. */
     data class PingResult(val ok: Boolean, val latencyMs: Long, val message: String)
 
-    /** Sends the smallest real request that still proves the key/model/base-url actually work. */
+    /**
+     * Sends the smallest real request that still proves the key/model/base-url actually work.
+     *
+     * The budget is deliberately not tiny. Reasoning models — Kimi K3 and the Nemotron family
+     * among them — spend tokens thinking before they emit a single visible character, and that
+     * thinking is billed against max_tokens. Verified live: Kimi K3 asked for one word returns
+     * content=null with finish_reason=length at max_tokens=8, and a clean "hi" at 400. A health
+     * check that reports a perfectly good key as broken is worse than a slightly costlier one.
+     */
     suspend fun ping(cfg: ProviderConfig, role: String): PingResult {
         val started = System.currentTimeMillis()
         return try {
             complete(
                 cfg, role,
                 listOf(ChatTurn("user", "Reply with exactly one word: hi")),
-                temperature = 0.0, maxTokens = 8,
+                temperature = 0.0, maxTokens = 512,
             )
             PingResult(true, System.currentTimeMillis() - started, "OK")
         } catch (e: LlmException) {

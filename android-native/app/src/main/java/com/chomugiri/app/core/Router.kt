@@ -134,12 +134,17 @@ suspend fun classifyIntentAi(message: String, settings: AppSettings): Intent {
         val raw = LlmClient.complete(
             settings.provider(RoleKey.FAST), "Router",
             listOf(ChatTurn("user", TRIAGE_PROMPT.format(trimmed.take(500)))),
-            temperature = 0.0, maxTokens = 6,
+            // Not 6. A reasoning model spends tokens thinking before its first visible character,
+            // and that thinking is billed against max_tokens — verified live, nemotron-3-nano at
+            // max_tokens=6 returns "Hmm, the user is" instead of a verdict, so every routing call
+            // silently fell through to the local heuristic and the AI router never actually ran.
+            temperature = 0.0, maxTokens = 512,
         ).trim().uppercase()
+        // The verdict is now the last word of a possibly chatty reply, not necessarily the first.
         when {
-            raw.startsWith("PIPELINE") -> Intent.PIPELINE
-            raw.startsWith("RESEARCH") -> Intent.RESEARCH
-            raw.startsWith("CHAT") -> Intent.CHAT
+            "PIPELINE" in raw -> Intent.PIPELINE
+            "RESEARCH" in raw -> Intent.RESEARCH
+            "CHAT" in raw -> Intent.CHAT
             else -> classifyIntent(trimmed)
         }
     } catch (e: Exception) {
