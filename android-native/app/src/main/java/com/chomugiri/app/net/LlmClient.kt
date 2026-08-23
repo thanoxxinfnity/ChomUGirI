@@ -3,6 +3,7 @@ package com.chomugiri.app.net
 import com.chomugiri.app.core.ChatTurn
 import com.chomugiri.app.core.ProviderConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -27,7 +28,10 @@ class LlmException(val role: String, message: String) : Exception(message)
 object LlmClient {
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
+        // Deliberately not huge: a mobile TCP handshake that hasn't completed in 20s is not
+        // going to, and burning 30s per try before a retry just makes a flaky network feel dead.
+        // Recovery comes from retrying on a fresh connection (below), not from waiting longer.
+        .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(300, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
@@ -69,8 +73,20 @@ object LlmClient {
     private fun isRetryableNetworkError(e: Throwable): Boolean = when (e) {
         is javax.net.ssl.SSLException, is java.net.SocketException,
         is java.net.SocketTimeoutException, is java.io.EOFException -> true
+        // DNS resolution dies transiently whenever the radio hands over between towers or
+        // flips wifi/mobile; the host is fine, the lookup just happened at the wrong moment.
+        is java.net.UnknownHostException -> true
         else -> false
     }
+
+    /**
+     * Attempts per request, and how long to wait before each retry. Backoff is the whole point:
+     * the previous version retried instantly, which on a flaky mobile link means the second try
+     * hits the exact same dead radio state the first one did and fails identically. Pausing lets
+     * a tower handover or a wifi/mobile flip actually finish before trying again.
+     */
+    private const val MAX_ATTEMPTS = 4
+    private val RETRY_BACKOFF_MS = longArrayOf(1_000, 3_000, 7_000)
 
     /** Streams content deltas as they arrive. */
     fun stream(
@@ -144,13 +160,17 @@ object LlmClient {
             } catch (e: LlmException) {
                 throw e
             } catch (e: java.io.IOException) {
-                // Only retry a completely clean slate: nothing streamed yet, one retry, and a
-                // genuinely transient-looking error — never on a real HTTP/API failure, and never
-                // after content has already reached the caller (retrying then would duplicate it).
-                if (!emittedAny && attempt < 2 && isRetryableNetworkError(e)) continue
+                // Only retry a completely clean slate: nothing streamed yet, attempts left, and
+                // a genuinely transient-looking error — never on a real HTTP/API failure, and
+                // never after content has already reached the caller (that would duplicate it).
+                if (!emittedAny && attempt < MAX_ATTEMPTS && isRetryableNetworkError(e)) {
+                    delay(RETRY_BACKOFF_MS[(attempt - 1).coerceAtMost(RETRY_BACKOFF_MS.lastIndex)])
+                    continue
+                }
+                val tries = if (attempt > 1) ", $attempt attempts with backoff" else ""
                 throw LlmException(
                     role,
-                    "$role: connection dropped (${e.javaClass.simpleName}${if (attempt > 1) ", retried once" else ""}) — ${e.message ?: "network error"}. Usually a flaky mobile connection; try again.",
+                    "$role: connection dropped (${e.javaClass.simpleName}$tries) — ${e.message ?: "network error"}. Your connection couldn't reach the provider; check signal and try again.",
                 )
             }
         }
