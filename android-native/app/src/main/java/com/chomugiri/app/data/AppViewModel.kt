@@ -269,6 +269,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // decides. Renders as a plain "Thinking..." shimmer in the meantime.
         addMessage(convId, Message(id = assistantId, role = "assistant", streaming = true))
 
+        val startedAt = System.currentTimeMillis()
         val job = viewModelScope.launch {
             try {
                 // The router is a real AI decision (the Fast Chat role), not a keyword list — that
@@ -328,10 +329,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 syncBusy()
                 // Announced once the job is off the books, so a still-running sibling keeps the
                 // progress notification and only the actually-finished one reports.
+                //
+                // Gated on the run being one you'd plausibly walk away from: a build that produced
+                // files, or anything that took long enough to leave the app over. Buzzing someone's
+                // phone because a two-second "hi" finished while they were elsewhere is spam, and
+                // spam is how people end up muting the channel that carries the useful alerts.
                 finished?.let { m ->
-                    val title = conversationById(convId)?.title ?: "ChomuGiri"
-                    if (m.error != null) notifyIfAway("Build failed - " + title, m.error)
-                    else notifyIfAway("Done - " + title, m.content.take(120).ifBlank { "Your project is ready." })
+                    val elapsed = System.currentTimeMillis() - startedAt
+                    val worthTelling = m.artifactId != null || m.error != null || elapsed > 25_000
+                    if (worthTelling) {
+                        val title = conversationById(convId)?.title ?: "ChomuGiri"
+                        if (m.error != null) notifyIfAway("Build failed - " + title, m.error)
+                        else notifyIfAway("Done - " + title, m.content.take(120).ifBlank { "Your project is ready." })
+                    }
                 }
                 persistConversations()
             }
