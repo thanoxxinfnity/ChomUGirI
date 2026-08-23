@@ -10,6 +10,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -254,6 +256,47 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     }
                     Spacer(Modifier.height(4.dp))
                     ProviderHealthCheck(role, cfg)
+                }
+            }
+
+            Section("Custom models") {
+                Text(
+                    "Add any OpenAI-compatible endpoint under your own name — your own key, your " +
+                        "own base URL, your own model id. It shows up next to Kimi/GLM/DeepSeek/" +
+                        "Nemotron in the model picker by the send button, for a direct one-off reply.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FgMuted,
+                )
+                Spacer(Modifier.height(10.dp))
+                settings.customModels.forEach { cm ->
+                    Surface(
+                        color = BgDark,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f)) {
+                                    Field("Name", cm.name) { v -> vm.updateCustomModel(cm.id) { it.copy(name = v) } }
+                                }
+                                IconButton(onClick = { vm.deleteCustomModel(cm.id) }) {
+                                    Icon(Icons.Default.Delete, "Remove", tint = Danger)
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Field("API key", cm.apiKey, secret = true) { v -> vm.updateCustomModel(cm.id) { it.copy(apiKey = v) } }
+                            Spacer(Modifier.height(8.dp))
+                            Field("Base URL", cm.baseUrl, uri = true) { v -> vm.updateCustomModel(cm.id) { it.copy(baseUrl = v) } }
+                            Spacer(Modifier.height(8.dp))
+                            Field("Model id", cm.model) { v -> vm.updateCustomModel(cm.id) { it.copy(model = v) } }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { vm.addCustomModel() }) {
+                    Icon(Icons.Default.Add, null, tint = Accent2, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add a custom model", color = Accent2)
                 }
             }
 

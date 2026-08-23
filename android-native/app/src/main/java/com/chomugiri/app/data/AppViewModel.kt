@@ -104,6 +104,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.saveSettings(next) }
     }
 
+    // ---------- custom models ----------
+
+    fun addCustomModel(): String {
+        val id = UUID.randomUUID().toString()
+        updateSettings { it.copy(customModels = it.customModels + CustomModel(id = id, name = "New model")) }
+        return id
+    }
+
+    fun updateCustomModel(id: String, block: (CustomModel) -> CustomModel) {
+        updateSettings { s -> s.copy(customModels = s.customModels.map { if (it.id == id) block(it) else it }) }
+    }
+
+    fun deleteCustomModel(id: String) {
+        updateSettings { it.copy(customModels = it.customModels.filterNot { m -> m.id == id }) }
+    }
+
     // ---------- conversations ----------
 
     val activeConversation: Conversation?
@@ -180,8 +196,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * @param forcedRole Power-user override (long-press send): skip the router entirely and let
      * this one message go straight to the given role as a direct chat call.
+     * @param forcedCustomModelId Same idea, but for a user-added custom model (see
+     * AppSettings.customModels) instead of one of the five fixed pipeline roles.
      */
-    fun send(text: String, forcedIntent: Intent? = null, forcedRole: RoleKey? = null) {
+    fun send(text: String, forcedIntent: Intent? = null, forcedRole: RoleKey? = null, forcedCustomModelId: String? = null) {
         if (text.isBlank()) return
         // Only refuse if THIS conversation already has a job running — a different, idle
         // conversation must stay free to send while another one is mid-pipeline.
@@ -201,7 +219,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 // The router is a real AI decision (the Fast Chat role), not a keyword list — that
                 // is what stops "what's the capital of France" from ever waking the coding swarm.
-                val intent = if (forcedRole != null) Intent.CHAT else (forcedIntent ?: classifyIntentAi(text, s))
+                val customModel = forcedCustomModelId?.let { id -> s.customModels.firstOrNull { it.id == id } }
+                val intent = if (forcedRole != null || customModel != null) Intent.CHAT else (forcedIntent ?: classifyIntentAi(text, s))
                 updateMessage(convId, assistantId) {
                     it.copy(
                         kind = when (intent) {
@@ -212,6 +231,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             Intent.VIDEO -> "pipeline"
                         },
                         modelUsed = when {
+                            customModel != null -> customModel.name.ifBlank { customModel.model }
                             forcedRole != null -> ROLE_LABELS[forcedRole]
                             intent == Intent.CHAT -> ROLE_LABELS[RoleKey.FAST]
                             intent == Intent.RESEARCH -> "Deep Research"
@@ -222,7 +242,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 when (intent) {
-                    Intent.CHAT -> runFastChat(convId, assistantId, text, s, forcedRole ?: RoleKey.FAST)
+                    Intent.CHAT -> if (customModel != null) {
+                        val provider = ProviderConfig(apiKey = customModel.apiKey, baseUrl = customModel.baseUrl, model = customModel.model)
+                        runFastChat(convId, assistantId, text, provider, customModel.name.ifBlank { customModel.model })
+                    } else {
+                        val role = forcedRole ?: RoleKey.FAST
+                        runFastChat(convId, assistantId, text, s.provider(role), ROLE_LABELS[role] ?: role.name, role)
+                    }
                     Intent.PIPELINE -> {
                         // Real conversation history, not just this one isolated message — without
                         // it Kimi can't tell "make a website" -> its own clarifying question ->
@@ -260,17 +286,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _busyConversations.value = jobs.keys.toSet()
     }
 
-    private suspend fun runFastChat(convId: String, msgId: String, text: String, s: AppSettings, role: RoleKey = RoleKey.FAST) {
+    private suspend fun runFastChat(
+        convId: String, msgId: String, text: String, provider: ProviderConfig, label: String, role: RoleKey? = RoleKey.FAST,
+    ) {
         val history = (activeConversation?.messages ?: emptyList())
             .filter { it.kind == "chat" && it.content.isNotBlank() && it.id != msgId }
             .takeLast(10)
             .map { ChatTurn(it.role, it.content) }
 
         val systemPrompt = if (role == RoleKey.FAST) FAST_CHAT_SYSTEM_PROMPT else
-            "You are ${ROLE_LABELS[role]}, answering directly because the user picked you specifically for this message. Reply naturally and helpfully."
+            "You are $label, answering directly because the user picked you specifically for this message. Reply naturally and helpfully."
         val turns = listOf(ChatTurn("system", systemPrompt)) + history + ChatTurn("user", text)
         val sb = StringBuilder()
-        LlmClient.stream(s.provider(role), ROLE_LABELS[role] ?: role.name, turns, temperature = 0.6, maxTokens = 2048)
+        LlmClient.stream(provider, label, turns, temperature = 0.6, maxTokens = 2048)
             .collect { chunk ->
                 sb.append(chunk)
                 updateMessage(convId, msgId) { it.copy(content = sb.toString()) }

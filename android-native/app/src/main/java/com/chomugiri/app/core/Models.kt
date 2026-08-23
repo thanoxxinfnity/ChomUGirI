@@ -21,6 +21,20 @@ data class ProviderConfig(
     val model: String = "",
 )
 
+/**
+ * A model the user has wired up themselves, beyond the five fixed pipeline roles — their own
+ * name, their own OpenAI-compatible endpoint, their own key. Selectable from chat the same way a
+ * pipeline role is, via the per-message model picker.
+ */
+@Serializable
+data class CustomModel(
+    val id: String,
+    val name: String = "",
+    val baseUrl: String = "",
+    val model: String = "",
+    val apiKey: String = "",
+)
+
 const val NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -82,6 +96,8 @@ data class AppSettings(
      * reliably true, which is why the coder is the one kept.
      */
     val singleModelMode: Boolean = false,
+    /** User-defined models with their own endpoint, alongside the five fixed pipeline roles. */
+    val customModels: List<CustomModel> = emptyList(),
 ) {
     fun provider(role: RoleKey): ProviderConfig {
         val effective = if (singleModelMode) RoleKey.KIMI else role

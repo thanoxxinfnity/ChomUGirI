@@ -116,6 +116,8 @@ fun ChatScreen(
             auditLoops = settings.maxAuditLoops,
             onAuditLoopsChange = { n -> vm.updateSettings { it.copy(maxAuditLoops = n) } },
             onSendWithRole = { t, role -> vm.send(t, forcedRole = role) },
+            customModels = settings.customModels,
+            onSendWithCustomModel = { t, id -> vm.send(t, forcedCustomModelId = id) },
         )
     }
 }
@@ -633,6 +635,8 @@ private fun Composer(
     auditLoops: Int = 2,
     onAuditLoopsChange: (Int) -> Unit = {},
     onSendWithRole: (String, com.chomugiri.app.core.RoleKey) -> Unit = { _, _ -> },
+    customModels: List<com.chomugiri.app.core.CustomModel> = emptyList(),
+    onSendWithCustomModel: (String, String) -> Unit = { _, _ -> },
 ) {
     var text by remember { mutableStateOf("") }
     var toolsOpen by remember { mutableStateOf(false) }
@@ -640,6 +644,7 @@ private fun Composer(
     var pickedIntent by remember { mutableStateOf<com.chomugiri.app.core.Intent?>(null) }
     var attachedName by remember { mutableStateOf<String?>(null) }
     var forcedRole by remember { mutableStateOf<com.chomugiri.app.core.RoleKey?>(null) }
+    var forcedCustomModel by remember { mutableStateOf<com.chomugiri.app.core.CustomModel?>(null) }
     var roleMenuOpen by remember { mutableStateOf(false) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -722,30 +727,40 @@ private fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box {
+                    val forcedLabel = forcedCustomModel?.let { it.name.ifBlank { it.model } } ?: forcedRole?.let { com.chomugiri.app.core.ROLE_LABELS[it] }
                     Surface(
-                        color = if (forcedRole != null) Accent.copy(alpha = 0.18f) else BgElevated,
+                        color = if (forcedLabel != null) Accent.copy(alpha = 0.18f) else BgElevated,
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.clickable { roleMenuOpen = true },
                     ) {
                         Row(Modifier.padding(horizontal = 9.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                forcedRole?.let { com.chomugiri.app.core.ROLE_LABELS[it] } ?: "Auto",
+                                forcedLabel ?: "Auto",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (forcedRole != null) Accent else FgMuted,
+                                color = if (forcedLabel != null) Accent else FgMuted,
                             )
-                            Icon(Icons.Default.ArrowDropDown, null, tint = if (forcedRole != null) Accent else FgMuted, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.ArrowDropDown, null, tint = if (forcedLabel != null) Accent else FgMuted, modifier = Modifier.size(14.dp))
                         }
                     }
                     DropdownMenu(expanded = roleMenuOpen, onDismissRequest = { roleMenuOpen = false }) {
                         DropdownMenuItem(
                             text = { Text("Auto (router decides)") },
-                            onClick = { roleMenuOpen = false; forcedRole = null },
+                            onClick = { roleMenuOpen = false; forcedRole = null; forcedCustomModel = null },
                         )
                         com.chomugiri.app.core.ROLE_ORDER.forEach { role ->
                             DropdownMenuItem(
                                 text = { Text(com.chomugiri.app.core.ROLE_LABELS[role] ?: role.name) },
-                                onClick = { roleMenuOpen = false; forcedRole = role },
+                                onClick = { roleMenuOpen = false; forcedRole = role; forcedCustomModel = null },
                             )
+                        }
+                        if (customModels.isNotEmpty()) {
+                            HorizontalDivider()
+                            customModels.forEach { cm ->
+                                DropdownMenuItem(
+                                    text = { Text(cm.name.ifBlank { cm.model.ifBlank { "Untitled model" } }) },
+                                    onClick = { roleMenuOpen = false; forcedCustomModel = cm; forcedRole = null },
+                                )
+                            }
                         }
                     }
                 }
@@ -889,7 +904,9 @@ private fun Composer(
                 fun doSend() {
                     val t = text.trim()
                     if (t.isEmpty()) return
-                    forcedRole?.let { onSendWithRole(t, it) } ?: onSend(t, pickedIntent)
+                    forcedCustomModel?.let { onSendWithCustomModel(t, it.id) }
+                        ?: forcedRole?.let { onSendWithRole(t, it) }
+                        ?: onSend(t, pickedIntent)
                     text = ""; pickedIntent = null; attachedName = null
                 }
                 FilledIconButton(
