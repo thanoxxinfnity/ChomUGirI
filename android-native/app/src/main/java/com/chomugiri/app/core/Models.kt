@@ -134,24 +134,39 @@ fun defaultModelFor(role: RoleKey): String = when (role) {
 }
 
 /**
- * Model ids that are known-dead on their endpoint, mapped to the live replacement.
+ * Model ids that are dead specifically on NVIDIA NIM, mapped to a live NIM replacement.
  *
  * Changing defaultModelFor() alone does not reach anyone who already has the app: a saved
- * ProviderConfig overrides the default forever, so a user whose settings still hold the dead
- * z-ai/glm-5.3 would keep getting HTTP 404 on every build no matter what the code now says.
- * This rewrites those specific ids on load, and touches nothing else the user chose.
+ * ProviderConfig outranks the default forever, so a user still holding a retired id would keep
+ * failing on every build no matter what the shipped code says. This rewrites those ids on load
+ * and touches nothing else the user chose.
  */
-private val DEAD_MODEL_REPLACEMENTS = mapOf(
+private val DEAD_ON_NIM = mapOf(
+    // Both answer HTTP 410 on NIM with an explicit end-of-life date (5.1 on 2026-07-02, 5.2 on
+    // 2026-08-21). glm-5.3 was never a NIM model at all — a wrong guess at a successor, and the
+    // actual source of the 404 users were seeing on every build.
     "z-ai/glm-5.3" to "stepfun-ai/step-3.7-flash",
     "z-ai/glm-5.2" to "stepfun-ai/step-3.7-flash",
+    "z-ai/glm-5.1" to "stepfun-ai/step-3.7-flash",
 )
 
-/** Applied once whenever settings are loaded from disk. */
+private fun isNimUrl(url: String): Boolean =
+    url.contains("integrate.api.nvidia.com", ignoreCase = true)
+
+/**
+ * Applied once whenever settings are loaded from disk.
+ *
+ * Deliberately scoped to the endpoint, not the model id: these GLM versions are dead *on NIM*,
+ * but perfectly alive on OpenRouter, where glm-5.2 is a normal paid model. Rewriting by id alone
+ * would silently undo a user who picked the GLM preset for the auditor — and leave them worse off
+ * than before, since it would point a NIM-only model id at OpenRouter's endpoint.
+ */
 fun AppSettings.migrated(): AppSettings {
     var changed = false
     val fixed = providers.mapValues { (_, cfg) ->
-        val to = DEAD_MODEL_REPLACEMENTS[cfg.model.trim()]
-        if (to == null) cfg else { changed = true; cfg.copy(model = to) }
+        val to = DEAD_ON_NIM[cfg.model.trim()]
+        if (to == null || !isNimUrl(cfg.baseUrl)) cfg
+        else { changed = true; cfg.copy(model = to) }
     }
     return if (changed) copy(providers = fixed) else this
 }
