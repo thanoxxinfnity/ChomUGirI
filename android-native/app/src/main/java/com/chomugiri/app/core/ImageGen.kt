@@ -10,22 +10,40 @@ private val IMAGE_MARKER = Regex("\\{\\{IMAGE:\\s*([^}]{1,200}?)\\s*\\}\\}")
 private const val MAX_IMAGES = 6
 
 /**
- * A soft, deterministic gradient SVG (as a data URI) so a project never ships a literal
+ * A deterministic placeholder SVG (as a data URI) so a project never ships a literal
  * "{{IMAGE: ...}}" string on the page — used when no Gemini key is set, or a generation call
  * fails. Not a real photo, but never a broken/blank spot either.
+ *
+ * Deliberately dark and on-palette rather than a random hue. An earlier version picked its hue
+ * from the description's hashCode, which on a real generated page produced a row of clashing
+ * pink/olive/orange rectangles against the dark theme — worse-looking than having no image at
+ * all. These stay inside the design system's own range (see WebScaffold.kt), varying only
+ * subtly, so a page missing its photos still reads as one coherent design.
  */
 private fun placeholderDataUri(description: String): String {
-    val hue = (description.hashCode().and(0x7fffffff)) % 360
-    val hue2 = (hue + 40) % 360
+    // Narrow band around the theme's violet/cyan accents, not the full colour wheel.
+    val h = description.hashCode().and(0x7fffffff)
+    val hue = 232 + (h % 38)           // 232-269: indigo -> violet
+    val hue2 = 186 + (h / 7 % 30)      // 186-215: cyan -> blue
+    val cx = 28 + (h / 13 % 45)        // move the glow around so tiles differ
+    val cy = 26 + (h / 29 % 40)
     val svg = """
-        <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+        <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
           <defs>
-            <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stop-color="hsl($hue,55%,55%)"/>
-              <stop offset="100%" stop-color="hsl($hue2,55%,40%)"/>
+            <radialGradient id="glow" cx="$cx%" cy="$cy%" r="72%">
+              <stop offset="0%" stop-color="hsl($hue,72%,58%)" stop-opacity=".42"/>
+              <stop offset="55%" stop-color="hsl($hue2,68%,45%)" stop-opacity=".16"/>
+              <stop offset="100%" stop-color="hsl($hue,60%,40%)" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#12141c"/>
+              <stop offset="100%" stop-color="#08090c"/>
             </linearGradient>
           </defs>
-          <rect width="800" height="600" fill="url(#g)"/>
+          <rect width="800" height="600" fill="url(#base)"/>
+          <rect width="800" height="600" fill="url(#glow)"/>
+          <rect x="1" y="1" width="798" height="598" fill="none"
+                stroke="hsl($hue,60%,70%)" stroke-opacity=".16" stroke-width="2"/>
         </svg>
     """.trimIndent()
     val b64 = Base64.encodeToString(svg.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
