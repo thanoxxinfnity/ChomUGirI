@@ -128,6 +128,16 @@ object LlmClient {
                 http.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         val errText = resp.body?.string().orEmpty()
+                        // A 404 from a chat endpoint almost never means "server missing" — it means
+                        // this endpoint has no such model. Saying that outright beats relaying the
+                        // provider's bare "404 page not found", which reads like the app is broken.
+                        if (resp.code == 404) {
+                            throw LlmException(
+                                role,
+                                "$role: the model \"${cfg.model}\" doesn't exist on ${cfg.baseUrl.removePrefix("https://").substringBefore('/')}. " +
+                                    "Pick a different model for this role in Settings.",
+                            )
+                        }
                         throw LlmException(role, "$role request failed (HTTP ${resp.code}): ${errText.take(300)}")
                     }
                     val source = resp.body?.source() ?: throw LlmException(role, "$role returned an empty response.")

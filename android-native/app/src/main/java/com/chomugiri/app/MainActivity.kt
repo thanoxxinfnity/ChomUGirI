@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
@@ -19,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.chomugiri.app.data.AppViewModel
 import com.chomugiri.app.ui.AppRoot
+import com.chomugiri.app.ui.AuroraBackground
 import com.chomugiri.app.ui.BgDark
 import com.chomugiri.app.ui.ChomuGirITheme
 
@@ -52,7 +54,13 @@ class MainActivity : ComponentActivity() {
                 // A plain color swap on theme toggle is jarring — cross-fade it instead.
                 val bg by animateColorAsState(BgDark, tween(200), label = "bg")
                 Surface(Modifier.fillMaxSize(), color = bg) {
-                    AppRoot(vm)
+                    // Aurora sits under the whole app, drawn once here rather than per screen so
+                    // it stays continuous while you move between chat, settings and a project
+                    // instead of restarting its animation on every navigation.
+                    Box(Modifier.fillMaxSize()) {
+                        if (settings.themeMode != "light") AuroraBackground()
+                        AppRoot(vm)
+                    }
                 }
             }
         }

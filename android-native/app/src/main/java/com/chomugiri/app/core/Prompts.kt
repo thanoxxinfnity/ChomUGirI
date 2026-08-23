@@ -122,12 +122,12 @@ a competent freelance designer would ship — not a page that merely renders. Co
 
 $FILE_FORMAT_INSTRUCTIONS"""
 
-const val KIMI_FIX_SYSTEM_PROMPT = """You are Kimi K3. GLM 5.3 (the auditor) found issues in your code. Fix every issue listed and
+const val KIMI_FIX_SYSTEM_PROMPT = """You are Kimi K3. The auditor found issues in your code. Fix every issue listed and
 re-output the COMPLETE corrected content for every file you touch.
 
 $FILE_FORMAT_INSTRUCTIONS"""
 
-const val GLM_AUDIT_SYSTEM_PROMPT = """You are GLM 5.3, a meticulous line-by-line code auditor. You are given a set of source files.
+const val GLM_AUDIT_SYSTEM_PROMPT = """You are a meticulous line-by-line code auditor. You are given a set of source files.
 Find real bugs, logic errors, security issues, missing error handling, and anything that would
 stop this code from running. Do not invent issues that don't exist — if the code is genuinely
 clean, say so.

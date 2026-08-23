@@ -773,7 +773,7 @@ private val SUGGESTIONS = listOf(
 private val ROUTER_STAGES = listOf(
     "Fast Chat" to "casual talk",
     "Kimi K3" to "coder",
-    "GLM 5.3" to "auditor",
+    "Auditor" to "auditor",
     "DeepSeek R1" to "fallback",
     "Nemotron" to "safety net",
 )
@@ -906,6 +906,13 @@ private fun Composer(
     onSendWithCustomModel: (String, String) -> Unit = { _, _ -> },
 ) {
     val haptics = rememberHaptics()
+    val sendTransition = rememberInfiniteTransition(label = "send")
+    val sendPulse by sendTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.07f,
+        animationSpec = infiniteRepeatable(tween(1400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "sendPulse",
+    )
     var text by remember { mutableStateOf("") }
     var toolsOpen by remember { mutableStateOf(false) }
     // Explicit tools the user opts into from the "+" menu — never auto-guessed by the router.
@@ -1180,7 +1187,10 @@ private fun Composer(
                 }
                 FilledIconButton(
                     onClick = { if (busy) { haptics.tap(); onStop() } else { haptics.commit(); doSend() } },
-                    modifier = Modifier.size(48.dp),
+                    // Breathes only when there is something to send. A control that pulses while
+                    // idle is just noise; pulsing exactly when it becomes actionable reads as the
+                    // button waking up, and doubles as a hint that the message is ready to go.
+                    modifier = Modifier.size(48.dp).scale(if (text.isNotBlank() && !busy) sendPulse else 1f),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent),
                 ) {
                     Icon(

@@ -9,7 +9,7 @@ val ROLE_ORDER = listOf(RoleKey.FAST, RoleKey.KIMI, RoleKey.GLM, RoleKey.DEEPSEE
 val ROLE_LABELS = mapOf(
     RoleKey.FAST to "Fast Chat Model",
     RoleKey.KIMI to "Kimi K3 (Coder)",
-    RoleKey.GLM to "GLM 5.3 (Auditor)",
+    RoleKey.GLM to "Step 3.7 Flash (Auditor)",
     RoleKey.DEEPSEEK to "DeepSeek R1 (Deep Logic)",
     RoleKey.NEMOTRON to "Nemotron 3 Ultra 550B (Safety Net)",
 )
@@ -117,12 +117,39 @@ fun defaultModelFor(role: RoleKey): String = when (role) {
     // visually generic front-end code. moonshotai/kimi-k3 is genuinely available on NIM (verified
     // against its live /models catalog), so the coder is now actually the model it claims to be.
     RoleKey.KIMI -> "moonshotai/kimi-k3"
-    // glm-5.2 hit end-of-life 2026-08-21 (confirmed via a live HTTP 410 "Gone" from the provider)
-    // and glm-5.3 is the current live successor — verified against the provider's own /models
-    // catalog before picking it, not guessed.
-    RoleKey.GLM -> "z-ai/glm-5.3"
+    // There is no GLM on NIM at all — the whole catalog was pulled and searched, and z-ai/glm-5.3
+    // matched nothing, which is why the auditor answered a flat HTTP 404 on every build.
+    // step-3.7-flash was picked by actually running the audit task against every plausible
+    // candidate: given a file with four planted bugs it found 4/4 on six consecutive runs in
+    // 4-7s, with clean JSON and no false-positive padding. minimax-m3 matched it for quality but
+    // failed one run outright, and nemotron-3-super blew its token budget reasoning on another.
+    // It is also a different lineage from Kimi, so the audit is a genuine second opinion.
+    RoleKey.GLM -> "stepfun-ai/step-3.7-flash"
     RoleKey.DEEPSEEK -> "deepseek-ai/deepseek-v4-flash-0731"
     RoleKey.NEMOTRON -> "nvidia/nemotron-3-ultra-550b-a55b"
+}
+
+/**
+ * Model ids that are known-dead on their endpoint, mapped to the live replacement.
+ *
+ * Changing defaultModelFor() alone does not reach anyone who already has the app: a saved
+ * ProviderConfig overrides the default forever, so a user whose settings still hold the dead
+ * z-ai/glm-5.3 would keep getting HTTP 404 on every build no matter what the code now says.
+ * This rewrites those specific ids on load, and touches nothing else the user chose.
+ */
+private val DEAD_MODEL_REPLACEMENTS = mapOf(
+    "z-ai/glm-5.3" to "stepfun-ai/step-3.7-flash",
+    "z-ai/glm-5.2" to "stepfun-ai/step-3.7-flash",
+)
+
+/** Applied once whenever settings are loaded from disk. */
+fun AppSettings.migrated(): AppSettings {
+    var changed = false
+    val fixed = providers.mapValues { (_, cfg) ->
+        val to = DEAD_MODEL_REPLACEMENTS[cfg.model.trim()]
+        if (to == null) cfg else { changed = true; cfg.copy(model = to) }
+    }
+    return if (changed) copy(providers = fixed) else this
 }
 
 fun defaultProviders(): Map<String, ProviderConfig> =

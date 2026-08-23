@@ -125,15 +125,15 @@ fun runPipeline(
         // wrote — it degrades to "skip this stage" so the user still gets a real, working
         // project instead of a scary full failure over what's often just one flaky call.
         for (i in 1..maxLoops) {
-            emit(PipelineEvent.Step("GLM 5.3 audit round $i/$maxLoops..."))
+            emit(PipelineEvent.Step("Audit round $i/$maxLoops..."))
             val glmOut = try {
                 LlmClient.complete(
-                    settings.provider(RoleKey.GLM), "GLM 5.3",
+                    settings.provider(RoleKey.GLM), ROLE_LABELS[RoleKey.GLM] ?: "Auditor",
                     listOf(ChatTurn("system", GLM_AUDIT_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
                     temperature = 0.1, jsonMode = true,
                 )
             } catch (e: Exception) {
-                emit(PipelineEvent.Step("GLM audit failed: ${e.message ?: "unknown error"} — skipping this round. (Settings > GLM 5.3 > Test connection shows the exact error.)", done = true))
+                emit(PipelineEvent.Step("Audit failed: ${e.message ?: "unknown error"} — skipping this round. (Settings > Auditor > Test connection shows the exact error.)", done = true))
                 break
             }
             val parsed = parseIssues(extractJsonObject(glmOut))

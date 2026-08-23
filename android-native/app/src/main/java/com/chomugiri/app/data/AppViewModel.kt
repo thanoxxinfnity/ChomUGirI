@@ -81,8 +81,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            store.settings.collect { s ->
+            store.settings.collect { raw ->
+                // Rewrites model ids that are dead on their endpoint (see DEAD_MODEL_REPLACEMENTS).
+                // A saved config outranks the default forever, so without this a user already
+                // holding z-ai/glm-5.3 keeps hitting 404 no matter what the shipped default says.
+                val s = raw.migrated()
                 _settings.value = s
+                if (s != raw) viewModelScope.launch { store.saveSettings(s) }
                 if (!loaded) {
                     loaded = true
                     if (s.autoConnectTerminal && s.terminalUrl.isNotBlank()) startAutoConnect()
