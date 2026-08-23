@@ -88,8 +88,19 @@ fun ChatScreen(
     val messages = conversations.firstOrNull { it.id == activeId }?.messages ?: emptyList()
     val listState = rememberLazyListState()
 
+    // Follow the stream only while the user is already at the bottom. Unconditionally scrolling
+    // on every content change meant scrolling up to re-read something mid-generation yanked you
+    // straight back down on the next token — you physically could not read your own history
+    // while the model was still talking.
+    val atBottom by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+                ?: return@derivedStateOf true
+            last.index >= listState.layoutInfo.totalItemsCount - 2
+        }
+    }
     LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+        if (messages.isNotEmpty() && atBottom) listState.animateScrollToItem(messages.size - 1)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -150,6 +161,7 @@ private fun MessageRow(
     onPickOption: (String) -> Unit,
 ) {
     val isUser = msg.role == "user"
+    val haptics = rememberHaptics()
     Column(
         Modifier.fillMaxWidth(),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
@@ -212,22 +224,43 @@ private fun MessageRow(
                     enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(260, delayMillis = 100)) +
                         androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(260, delayMillis = 100)) { it / 4 },
                 ) {
-                    Column(Modifier.padding(top = 8.dp).widthIn(max = 560.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Swipeable pills rather than a stack of full-width rows: options are short
+                    // and comparable, so side-by-side lets you read them against each other with
+                    // a thumb flick instead of pushing the reply off screen.
+                    Row(
+                        Modifier
+                            .padding(top = 8.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         options.forEach { (letter, title) ->
                             Surface(
                                 color = BgElevated,
-                                shape = RoundedCornerShape(14.dp),
+                                shape = RoundedCornerShape(20.dp),
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(1.dp, Accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                                    .clickable { onPickOption("Option $letter: $title") },
+                                    .widthIn(max = 260.dp)
+                                    .border(1.dp, Accent.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
+                                    .clickable { haptics.tap(); onPickOption("Option $letter: $title") },
                             ) {
-                                Row(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(color = Accent.copy(alpha = 0.18f), shape = RoundedCornerShape(8.dp)) {
-                                        Text(letter, Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = Accent)
+                                Row(
+                                    Modifier.padding(start = 10.dp, end = 15.dp, top = 10.dp, bottom = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Surface(color = Accent.copy(alpha = 0.20f), shape = CircleShape) {
+                                        Text(
+                                            letter,
+                                            Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Accent,
+                                        )
                                     }
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                    Spacer(Modifier.width(9.dp))
+                                    Text(
+                                        title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    )
                                 }
                             }
                         }
@@ -363,13 +396,14 @@ private fun CodeBlock(lang: String, code: String) {
 
 @Composable
 private fun ArtifactCard(artifact: Artifact, onOpen: () -> Unit) {
+    val haptics = rememberHaptics()
     Surface(
         color = BgElevated,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .widthIn(max = 560.dp)
             .border(1.dp, Accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-            .clickable(onClick = onOpen),
+            .clickable { haptics.tap(); onOpen() },
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.FolderOpen, null, tint = Accent2, modifier = Modifier.size(20.dp))
@@ -409,6 +443,7 @@ private fun animatedDots(): String {
  */
 @Composable
 private fun ThinkingBubble(msg: Message) {
+    val haptics = rememberHaptics()
     val active = msg.streaming && msg.error == null
     val failed = msg.error != null
 
@@ -448,7 +483,7 @@ private fun ThinkingBubble(msg: Message) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { pinned = !expanded }
+                    .clickable { haptics.toggle(); pinned = !expanded }
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -666,13 +701,14 @@ private fun FileActionList(actions: List<com.chomugiri.app.core.FileAction>, onO
 
 @Composable
 private fun FileActionRow(action: com.chomugiri.app.core.FileAction, onOpen: () -> Unit) {
+    val haptics = rememberHaptics()
     Surface(
         color = BgElevated,
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier
             .fillMaxWidth()
             .border(1.dp, BorderCol, RoundedCornerShape(10.dp))
-            .clickable(onClick = onOpen),
+            .clickable { haptics.tap(); onOpen() },
     ) {
         Row(
             Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
@@ -869,6 +905,7 @@ private fun Composer(
     customModels: List<com.chomugiri.app.core.CustomModel> = emptyList(),
     onSendWithCustomModel: (String, String) -> Unit = { _, _ -> },
 ) {
+    val haptics = rememberHaptics()
     var text by remember { mutableStateOf("") }
     var toolsOpen by remember { mutableStateOf(false) }
     // Explicit tools the user opts into from the "+" menu — never auto-guessed by the router.
@@ -932,7 +969,7 @@ private fun Composer(
                                 if (selected) Accent.copy(alpha = 0.7f) else BorderCol,
                                 RoundedCornerShape(14.dp),
                             )
-                            .clickable { onAuditLoopsChange(tier.auditLoops) },
+                            .clickable { haptics.select(); onAuditLoopsChange(tier.auditLoops) },
                     ) {
                         Text(
                             tier.label,
@@ -982,7 +1019,7 @@ private fun Composer(
                         com.chomugiri.app.core.ROLE_ORDER.forEach { role ->
                             DropdownMenuItem(
                                 text = { Text(com.chomugiri.app.core.ROLE_LABELS[role] ?: role.name) },
-                                onClick = { roleMenuOpen = false; forcedRole = role; forcedCustomModel = null },
+                                onClick = { haptics.select(); roleMenuOpen = false; forcedRole = role; forcedCustomModel = null },
                             )
                         }
                         if (customModels.isNotEmpty()) {
@@ -990,7 +1027,7 @@ private fun Composer(
                             customModels.forEach { cm ->
                                 DropdownMenuItem(
                                     text = { Text(cm.name.ifBlank { cm.model.ifBlank { "Untitled model" } }) },
-                                    onClick = { roleMenuOpen = false; forcedCustomModel = cm; forcedRole = null },
+                                    onClick = { haptics.select(); roleMenuOpen = false; forcedCustomModel = cm; forcedRole = null },
                                 )
                             }
                         }
@@ -1142,7 +1179,7 @@ private fun Composer(
                     text = ""; pickedIntent = null; attachedName = null
                 }
                 FilledIconButton(
-                    onClick = { if (busy) onStop() else doSend() },
+                    onClick = { if (busy) { haptics.tap(); onStop() } else { haptics.commit(); doSend() } },
                     modifier = Modifier.size(48.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = Accent),
                 ) {

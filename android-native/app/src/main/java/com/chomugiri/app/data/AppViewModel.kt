@@ -379,7 +379,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         pinned = existing?.pinned ?: false,
                     )
                     _artifacts.value = _artifacts.value.filterNot { it.id == id } + art
-                    _activeArtifactId.value = id
+                    // Only steal the screen if the user is actually watching THIS chat and has
+                    // nothing else open. A build running in a background conversation used to
+                    // throw its project panel over whatever you were reading the moment files
+                    // landed; the tappable file rows in chat are the way in instead.
+                    if (_activeConversationId.value == convId && _activeArtifactId.value == null) {
+                        _activeArtifactId.value = id
+                    }
                     updateMessage(convId, msgId) { it.copy(artifactId = id) }
                     renameConversation(convId, title)
                 }

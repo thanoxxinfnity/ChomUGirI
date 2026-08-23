@@ -32,23 +32,27 @@ data class AppColors(
 )
 
 /**
- * 2026 redesign: deeper near-black layers (was a flat #18181B) for real depth between
- * background/card/dialog, a richer indigo accent, and a tighter border so panels read as
- * deliberately separated surfaces instead of one flat gray field — the "ekdam professional,
- * Replit/Claude-tier" look the flat palette wasn't giving us.
+ * Cyber-black with neon cyan/purple. The layering is the part that makes it read as depth rather
+ * than a flat dark theme: background, card and dialog step up in small increments, with a border
+ * light enough to separate panels but not to draw the eye off the content.
  */
 private val DarkPalette = AppColors(
-    accent = Color(0xFF6E56FF),
-    accent2 = Color(0xFFFFAA4C),
-    bg = Color(0xFF0B0B0E),
-    bgElevated = Color(0xFF141418),
-    bgElevated2 = Color(0xFF1C1C23),
-    drawerBg = Color(0xFF09090B),
-    border = Color(0xFF26262E),
-    fgMuted = Color(0xFF9A98A5),
-    fgPrimary = Color(0xFFF6F5F9),
-    success = Color(0xFF4ADE95),
-    danger = Color(0xFFFF6B6B),
+    // Neon cyan leads and purple answers it: two accents far enough apart on the wheel to code
+    // meaning (cyan = live/primary, purple = secondary) while both staying legible on near-black.
+    accent = Color(0xFF00E5FF),
+    accent2 = Color(0xFFB57BFF),
+    // Deep cyber-black, very slightly blue rather than neutral gray, so the neon reads as glow
+    // against it instead of sitting flat. Layers step up in tiny increments — on OLED a large
+    // jump between panels looks like a rendering seam, not depth.
+    bg = Color(0xFF080810),
+    bgElevated = Color(0xFF10101C),
+    bgElevated2 = Color(0xFF181828),
+    drawerBg = Color(0xFF050509),
+    border = Color(0xFF232338),
+    fgMuted = Color(0xFF8E8CA8),
+    fgPrimary = Color(0xFFF2F1FA),
+    success = Color(0xFF3DF5A5),
+    danger = Color(0xFFFF5C7A),
 )
 
 private val LightPalette = AppColors(
@@ -113,8 +117,11 @@ fun ChomuGirITheme(
     val palette = if (darkTheme) DarkPalette else LightPalette
     val colorScheme = if (darkTheme) {
         darkColorScheme(
-            primary = palette.accent, onPrimary = Color.White,
-            secondary = palette.accent2, onSecondary = Color(0xFF231400),
+            // Dark ink on both accents, not white: neon cyan and light purple are high-luminance
+            // colors, and white text on either fails contrast badly — the exact mistake that makes
+            // a neon theme look striking in a mockup and unreadable on a real filled button.
+            primary = palette.accent, onPrimary = Color(0xFF04141A),
+            secondary = palette.accent2, onSecondary = Color(0xFF150A24),
             background = palette.bg, onBackground = palette.fgPrimary,
             surface = palette.bgElevated, onSurface = palette.fgPrimary,
             surfaceVariant = palette.bgElevated2, onSurfaceVariant = palette.fgMuted,
