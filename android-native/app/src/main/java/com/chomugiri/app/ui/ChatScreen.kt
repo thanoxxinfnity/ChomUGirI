@@ -1,6 +1,14 @@
 package com.chomugiri.app.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -39,6 +47,10 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -141,7 +153,9 @@ private fun MessageRow(
         Modifier.fillMaxWidth(),
         horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
     ) {
-        if (!isUser && msg.steps.isNotEmpty()) {
+        // Also shown before the first step lands, so the live card is what you see from the
+        // moment you hit send, rather than a bare "Thinking..." that later swaps for a card.
+        if (!isUser && (msg.steps.isNotEmpty() || (msg.streaming && msg.error == null))) {
             ThinkingBubble(msg)
             Spacer(Modifier.height(6.dp))
         }
@@ -179,8 +193,6 @@ private fun MessageRow(
                     }
                 }
             }
-        } else if (!isUser && msg.streaming && msg.steps.isEmpty()) {
-            ShimmerText("Thinking...")
         }
 
         if (!isUser && !msg.streaming && msg.artifactId == null) {
@@ -382,98 +394,242 @@ private fun animatedDots(): String {
     return ".".repeat(n)
 }
 
+/**
+ * The AI's reasoning as a live, animated timeline instead of a pill you had to tap to open a
+ * dialog. Steps stream in one by one, each sliding in against a connector rail; the one in flight
+ * carries a breathing dot and shimmering text, finished ones settle into a muted check. It stays
+ * expanded while the model is actually working — that is the part worth watching — and folds
+ * itself down to a one-line summary once the answer lands, so finished chats stay readable.
+ */
 @Composable
 private fun ThinkingBubble(msg: Message) {
-    var open by remember { mutableStateOf(false) }
     val active = msg.streaming && msg.error == null
-    val dots = if (active) animatedDots() else ""
-    val label = when {
-        msg.error != null -> "Build failed — tap for details"
-        active -> (msg.steps.lastOrNull()?.text ?: "Thinking").trimEnd('.') + dots
-        else -> "Thought for a moment"
+    val failed = msg.error != null
+
+    // null = follow the run (open while thinking, closed once done). A tap pins it either way.
+    var pinned by remember(msg.id) { mutableStateOf<Boolean?>(null) }
+    val expanded = pinned ?: active
+
+    val tint = when {
+        failed -> Danger
+        active -> Accent
+        else -> Success
     }
 
-    Surface(
-        color = when {
-            msg.error != null -> Danger.copy(alpha = 0.12f)
-            active -> Accent.copy(alpha = 0.12f)
-            else -> Success.copy(alpha = 0.10f)
-        },
-        shape = CircleShape,
-        modifier = Modifier.clickable { open = true },
-    ) {
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                when {
-                    msg.error != null -> Icons.Default.ErrorOutline
-                    active -> Icons.Default.Psychology
-                    else -> Icons.Default.CheckCircle
-                },
-                null,
-                tint = when {
-                    msg.error != null -> Danger
-                    active -> Accent
-                    else -> Success
-                },
-                modifier = Modifier.size(14.dp),
-            )
-            Spacer(Modifier.width(7.dp))
-            if (active) ShimmerText(label) else Text(
-                label,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (msg.error != null) Danger else Success,
-            )
-            Spacer(Modifier.width(4.dp))
-            // A visible expand affordance — without it, tapping the pill to see the real
-            // reasoning steps is a hidden gesture nobody discovers on their own.
-            Icon(
-                Icons.Default.ExpandMore, "Show thinking steps",
-                tint = if (msg.error != null) Danger else if (active) Accent else Success,
-                modifier = Modifier.size(15.dp),
-            )
+    var elapsed by remember(msg.id) { mutableStateOf(0L) }
+    LaunchedEffect(msg.id, active) {
+        if (!active) return@LaunchedEffect
+        while (true) {
+            elapsed = (System.currentTimeMillis() - msg.createdAt).coerceAtLeast(0L) / 1000
+            delay(1000)
         }
     }
 
-    if (open) {
-        Dialog(onDismissRequest = { open = false }) {
-            Surface(color = BgElevated, shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.padding(18.dp).widthIn(max = 460.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Psychology, null, tint = Accent, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Thinking", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { open = false }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Close, "Close", tint = FgMuted, modifier = Modifier.size(18.dp))
+    val headline = when {
+        failed -> "Build failed"
+        active -> msg.steps.lastOrNull()?.text?.trimEnd('.') ?: "Thinking"
+        else -> "Thought for ${msg.steps.size} step${if (msg.steps.size == 1) "" else "s"}"
+    }
+
+    Surface(
+        color = BgElevated,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, if (active) tint.copy(alpha = 0.35f) else BorderCol, RoundedCornerShape(14.dp)),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { pinned = !expanded }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PulsingIcon(
+                    icon = if (failed) Icons.Default.ErrorOutline
+                    else if (active) Icons.Default.AutoAwesome
+                    else Icons.Default.CheckCircle,
+                    tint = tint,
+                    animate = active,
+                )
+                Spacer(Modifier.width(9.dp))
+                Box(Modifier.weight(1f)) {
+                    if (active) ShimmerText(headline) else Text(
+                        headline,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (failed) Danger else FgMuted,
+                        maxLines = 1,
+                    )
+                }
+                if (active && elapsed > 0) {
+                    Text(
+                        "${elapsed}s",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FgMuted,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    if (expanded) "Hide steps" else "Show steps",
+                    tint = FgMuted,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = fadeIn(tween(180)) + expandVertically(tween(220, easing = FastOutSlowInEasing)),
+                exit = fadeOut(tween(120)) + shrinkVertically(tween(180, easing = FastOutSlowInEasing)),
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 13.dp, end = 13.dp, bottom = 11.dp),
+                ) {
+                    msg.steps.forEachIndexed { i, step ->
+                        val isLast = i == msg.steps.lastIndex
+                        // Only the newest step animates in; replaying every step on each
+                        // recomposition would make the whole list twitch as one streams.
+                        val appear = remember(msg.id, i) {
+                            androidx.compose.animation.core.MutableTransitionState(false)
+                                .apply { targetState = true }
+                        }
+                        AnimatedVisibility(
+                            visibleState = appear,
+                            enter = fadeIn(tween(260)) +
+                                slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { -it / 5 },
+                        ) {
+                            StepRow(
+                                text = step.text,
+                                done = step.done,
+                                running = active && isLast && !step.done,
+                                showRail = !isLast || failed,
+                                tint = tint,
+                            )
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Column(
-                        Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(9.dp),
-                    ) {
-                        msg.steps.forEach { step ->
-                            Row(verticalAlignment = Alignment.Top) {
-                                Icon(
-                                    if (step.done) Icons.Default.CheckCircle else Icons.Default.Psychology,
-                                    null,
-                                    tint = if (step.done) Success else Accent,
-                                    modifier = Modifier.size(13.dp).padding(top = 2.dp),
-                                )
-                                Spacer(Modifier.width(9.dp))
-                                Text(step.text, style = MonoStyle, color = if (step.done) FgMuted else FgPrimary)
-                            }
-                        }
-                        msg.error?.let {
-                            Text(it, style = MonoStyle, color = Danger)
-                        }
+                    msg.error?.let { err ->
+                        StepRow(text = err, done = false, running = false, showRail = false, tint = Danger, isError = true)
                     }
                 }
             }
         }
     }
+}
+
+/** One row of the reasoning timeline: rail dot, connector down to the next step, and the text. */
+@Composable
+private fun StepRow(
+    text: String,
+    done: Boolean,
+    running: Boolean,
+    showRail: Boolean,
+    tint: Color,
+    isError: Boolean = false,
+) {
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Column(Modifier.width(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(5.dp))
+            when {
+                isError -> Icon(Icons.Default.ErrorOutline, null, tint = Danger, modifier = Modifier.size(11.dp))
+                done -> Icon(Icons.Default.Check, null, tint = Success, modifier = Modifier.size(11.dp))
+                running -> BreathingDot(tint)
+                else -> Box(
+                    Modifier.size(7.dp).clip(CircleShape).background(FgMuted.copy(alpha = 0.45f))
+                )
+            }
+            if (showRail) {
+                Spacer(Modifier.height(3.dp))
+                Box(
+                    Modifier
+                        .width(1.5.dp)
+                        .weight(1f)
+                        .heightIn(min = 8.dp)
+                        .background(BorderCol)
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f)) {
+            if (running) {
+                ShimmerBody(text)
+            } else {
+                Text(
+                    text,
+                    style = MonoStyle,
+                    color = if (isError) Danger else FgMuted,
+                    modifier = Modifier.padding(bottom = 9.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Monospace twin of ShimmerText, so a running step's own line breathes with it. */
+@Composable
+private fun ShimmerBody(text: String) {
+    val transition = rememberInfiniteTransition(label = "stepShimmer")
+    val alpha by transition.animateFloat(
+        initialValue = 0.5f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing), RepeatMode.Reverse),
+        label = "stepAlpha",
+    )
+    Text(
+        text,
+        style = MonoStyle,
+        color = FgPrimary.copy(alpha = alpha),
+        modifier = Modifier.padding(bottom = 9.dp),
+    )
+}
+
+/** The in-flight marker: a dot that swells and fades, with a halo pulsing out behind it. */
+@Composable
+private fun BreathingDot(tint: Color) {
+    val transition = rememberInfiniteTransition(label = "dot")
+    val pulse by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1300, easing = LinearEasing), RepeatMode.Restart),
+        label = "pulse",
+    )
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(11.dp)) {
+        Box(
+            Modifier
+                .size(11.dp)
+                .graphicsLayer {
+                    val s = 0.5f + pulse * 0.9f
+                    scaleX = s; scaleY = s; alpha = (1f - pulse) * 0.55f
+                }
+                .clip(CircleShape)
+                .background(tint)
+        )
+        Box(Modifier.size(7.dp).clip(CircleShape).background(tint))
+    }
+}
+
+/** Header glyph that gently breathes while a run is live, and sits still once it is done. */
+@Composable
+private fun PulsingIcon(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    animate: Boolean,
+) {
+    val transition = rememberInfiniteTransition(label = "icon")
+    val scale by transition.animateFloat(
+        initialValue = 0.86f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(tween(950, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "iconScale",
+    )
+    Icon(
+        icon, null, tint = tint,
+        modifier = Modifier.size(15.dp).scale(if (animate) scale else 1f),
+    )
 }
 
 @Composable
@@ -525,7 +681,7 @@ private fun EmptyState(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Logomark(size = 56.dp)
+        Logomark(size = 56.dp, breathe = true)
         Spacer(Modifier.height(18.dp))
         Text(
             "What are we building today?",

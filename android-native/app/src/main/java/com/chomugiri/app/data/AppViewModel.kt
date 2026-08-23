@@ -125,6 +125,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val activeConversation: Conversation?
         get() = _conversations.value.firstOrNull { it.id == _activeConversationId.value }
 
+    /**
+     * History for a specific conversation, never "whichever one is on screen right now". A job
+     * outlives the user's attention: start a build in one chat, switch to another while it runs,
+     * and reading activeConversation here fed the AI the *other* chat's messages as context.
+     */
+    private fun conversationById(id: String): Conversation? =
+        _conversations.value.firstOrNull { it.id == id }
+
     fun newConversation() {
         _activeConversationId.value = null
     }
@@ -134,6 +142,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteConversation(id: String) {
+        // A job outlives the chat it belongs to unless it is stopped here: without this, deleting
+        // a chat mid-build left the pipeline running, still writing into a conversation the user
+        // can no longer see and holding it in busyConversations forever.
+        jobs[id]?.cancel()
+        jobs.remove(id)
+        _busyConversations.value = jobs.keys.toSet()
         _conversations.value = _conversations.value.filterNot { it.id == id }
         if (_activeConversationId.value == id) {
             _activeConversationId.value = _conversations.value.maxByOrNull { it.updatedAt }?.id
@@ -253,7 +267,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         // Real conversation history, not just this one isolated message — without
                         // it Kimi can't tell "make a website" -> its own clarifying question ->
                         // the user's answer is one continuous exchange, and would just ask again.
-                        val history = (activeConversation?.messages ?: emptyList())
+                        val history = (conversationById(convId)?.messages ?: emptyList())
                             .filter { it.content.isNotBlank() && it.id != userMsgId && it.id != assistantId }
                             .takeLast(8)
                             .map { ChatTurn(it.role, it.content) }
@@ -289,7 +303,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun runFastChat(
         convId: String, msgId: String, text: String, provider: ProviderConfig, label: String, role: RoleKey? = RoleKey.FAST,
     ) {
-        val history = (activeConversation?.messages ?: emptyList())
+        val history = (conversationById(convId)?.messages ?: emptyList())
             .filter { it.kind == "chat" && it.content.isNotBlank() && it.id != msgId }
             .takeLast(10)
             .map { ChatTurn(it.role, it.content) }
