@@ -354,12 +354,40 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     color = FgMuted,
                 )
                 Spacer(Modifier.height(10.dp))
-                Field("Terminal URL (https:// or wss://)", settings.terminalUrl, uri = true) { v ->
-                    // Cleaned on the way in, not only at connect time. A tunnel URL is almost
-                    // always pasted from a wrapped terminal line, which carries a real newline
-                    // into the middle of the host — so the stored value is never broken in the
-                    // first place, and what you see in this field is what will actually be used.
+                Field(
+                    "Terminal URL (https:// or wss://)",
+                    settings.terminalUrl,
+                    uri = true,
+                    // A tunnel URL is longer than the field is wide. On one line the end is simply
+                    // hidden, which let a value with "-free.dev" accidentally pasted twice sit here
+                    // looking perfectly correct while every connection failed. It wraps now.
+                    singleLine = false,
+                ) { v ->
+                    // A tunnel URL is almost always pasted from a wrapped terminal line, which
+                    // carries a real newline into the middle of the host. Cleaned on the way in,
+                    // not only at connect time, so the stored value is never malformed.
                     vm.updateSettings { it.copy(terminalUrl = v.replace(Regex("\\s+"), "")) }
+                }
+                // The exact string the app will dial, spelled out. Truncation, a stray repeat, a
+                // missing scheme — none of it can hide when the real target is printed here.
+                if (settings.terminalUrl.isNotBlank()) {
+                    val target = com.chomugiri.app.net.TerminalClient.normalizeUrl(settings.terminalUrl)
+                    val host = target.removePrefix("wss://").removePrefix("ws://").substringBefore('/')
+                    val looksOdd = Regex("(\\.[a-z]{2,}).*\\1", RegexOption.IGNORE_CASE).containsMatchIn(host)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Will connect to: $target",
+                        style = MonoStyle,
+                        color = if (looksOdd) Danger else FgMuted,
+                    )
+                    if (looksOdd) {
+                        Text(
+                            "That host repeats itself — looks like part of the address got pasted " +
+                                "twice. Clear the field completely and paste it again.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Danger,
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 Field("ttyd auth token (optional)", settings.terminalAuthToken, secret = true) { v ->
@@ -759,6 +787,8 @@ private fun Field(
     label: String,
     value: String,
     secret: Boolean = false,
+    /** Off for long values like URLs, so the end can't sit hidden past the right edge. */
+    singleLine: Boolean = true,
     /**
      * For a URL/key field, not prose. Without this the field falls back to a text keyboard whose
      * autocorrect can silently swap a typed "-" for a lookalike Unicode dash — invisible on
@@ -775,7 +805,7 @@ private fun Field(
         onValueChange = onChange,
         label = { Text(label, style = MaterialTheme.typography.bodySmall) },
         modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
+        singleLine = singleLine,
         shape = RoundedCornerShape(12.dp),
         visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         keyboardOptions = if (secret || uri) {
