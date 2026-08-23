@@ -12,13 +12,19 @@ import java.util.concurrent.TimeUnit
 
 class NvidiaImageException(message: String) : Exception(message)
 
-/** Image models verified to exist on NVIDIA's genai endpoints (a real 401, not a 404). */
+/**
+ * All of these exist as NVIDIA genai endpoints, but which ones a given account may actually call
+ * varies — tested against a real key, only flux.1-dev returned an image (1024x1024 in ~5s);
+ * stable-diffusion-xl, sdxl-turbo and stable-diffusion-3-medium each answered 404 "Not found for
+ * account", and flux.1-schnell timed out twice without responding. So flux.1-dev leads and is the
+ * default, and the rest are labelled as needing enabling rather than presented as equal choices.
+ */
 val NIM_IMAGE_MODELS = listOf(
-    "black-forest-labs/flux.1-dev" to "FLUX.1 dev — best quality",
-    "black-forest-labs/flux.1-schnell" to "FLUX.1 schnell — fastest",
-    "stabilityai/stable-diffusion-3-medium" to "Stable Diffusion 3 Medium",
-    "stabilityai/stable-diffusion-xl" to "SDXL",
-    "stabilityai/sdxl-turbo" to "SDXL Turbo — fastest SD",
+    "black-forest-labs/flux.1-dev" to "FLUX.1 dev — best quality (verified working)",
+    "black-forest-labs/flux.1-schnell" to "FLUX.1 schnell — faster, if your account has it",
+    "stabilityai/stable-diffusion-3-medium" to "SD 3 Medium — needs account access",
+    "stabilityai/stable-diffusion-xl" to "SDXL — needs account access",
+    "stabilityai/sdxl-turbo" to "SDXL Turbo — needs account access",
 )
 
 const val NIM_DEFAULT_IMAGE_MODEL = "black-forest-labs/flux.1-dev"
@@ -67,6 +73,20 @@ object NvidiaImageClient {
                 .put("steps", if (model.contains("turbo", ignoreCase = true)) 4 else 25)
         }
 
+    /**
+     * The API doesn't name the format anywhere in the response, and it is NOT png — a real
+     * FLUX.1-dev call came back as a JPEG (payload starting "/9j/", verified as a 1024x1024 JFIF
+     * file). Labelling that as image/png happens to survive browser sniffing but breaks anywhere
+     * strict, so the type is read from the payload's own magic bytes instead of assumed.
+     */
+    private fun mimeFor(b64: String): String = when {
+        b64.startsWith("/9j/") -> "image/jpeg"
+        b64.startsWith("iVBORw0KGgo") -> "image/png"
+        b64.startsWith("R0lGOD") -> "image/gif"
+        b64.startsWith("UklGR") -> "image/webp"
+        else -> "image/png"
+    }
+
     /** Pulls the base64 payload out of whichever response shape came back. */
     private fun extractBase64(json: JSONObject): String? {
         json.optJSONArray("artifacts")?.optJSONObject(0)?.optString("base64")
@@ -101,6 +121,15 @@ object NvidiaImageClient {
                 }
                 if (!resp.isSuccessful) {
                     val detail = json.optString("detail").ifBlank { json.optString("message") }
+                    // A 404 here means the model exists but isn't enabled on this account — an
+                    // easy failure to misread as "the app is broken", so it says so plainly.
+                    if (resp.code == 404) {
+                        throw NvidiaImageException(
+                            "\"$safeModel\" isn't enabled on your NVIDIA account. Pick a different " +
+                                "model in Settings (FLUX.1 dev works on a standard account), or " +
+                                "enable this one at build.nvidia.com."
+                        )
+                    }
                     throw NvidiaImageException(
                         if (detail.isNotBlank()) "NVIDIA image request failed (HTTP ${resp.code}): $detail"
                         else "NVIDIA image request failed (HTTP ${resp.code}): ${text.take(250)}"
@@ -108,7 +137,7 @@ object NvidiaImageClient {
                 }
                 val b64 = extractBase64(json)
                     ?: throw NvidiaImageException("NVIDIA returned no image data. Response keys: ${json.keys().asSequence().take(6).joinToString()}")
-                if (b64.startsWith("data:")) b64 else "data:image/png;base64,$b64"
+                if (b64.startsWith("data:")) b64 else "data:${mimeFor(b64)};base64,$b64"
             }
         }
 }
