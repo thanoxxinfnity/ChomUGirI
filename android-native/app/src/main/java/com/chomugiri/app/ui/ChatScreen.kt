@@ -682,6 +682,7 @@ private fun Composer(
                 .navigationBarsPadding()
                 .imePadding(),
         ) {
+            HorizontalDivider(color = BorderCol, thickness = 1.dp)
             Row(
                 Modifier
                     .fillMaxWidth()
