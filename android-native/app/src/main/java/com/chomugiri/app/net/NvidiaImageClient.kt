@@ -46,14 +46,18 @@ object NvidiaImageClient {
 
     private fun buildBody(model: String, prompt: String): JSONObject =
         if (model.contains("flux", ignoreCase = true)) {
+            // schnell is a distilled, guidance-free model: NIM rejects any cfg_scale above 0 on
+            // it outright ("Input should be less than or equal to 0", HTTP 422 — hit for real
+            // while testing). dev takes normal guidance.
+            val schnell = model.contains("schnell", ignoreCase = true)
             JSONObject()
                 .put("prompt", prompt)
                 .put("mode", "base")
-                .put("cfg_scale", 3.5)
+                .put("cfg_scale", if (schnell) 0 else 3.5)
                 .put("width", 1024)
                 .put("height", 1024)
                 .put("seed", 0)
-                .put("steps", if (model.contains("schnell", ignoreCase = true)) 4 else 30)
+                .put("steps", if (schnell) 4 else 30)
         } else {
             JSONObject()
                 .put("text_prompts", JSONArray().put(JSONObject().put("text", prompt).put("weight", 1)))

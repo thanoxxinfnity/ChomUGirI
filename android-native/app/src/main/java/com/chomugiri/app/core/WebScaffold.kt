@@ -30,8 +30,25 @@ Layout:   .nav .nav-inner .brand .nav-links | .hero .hero-inner .eyebrow | .sect
 Type:     .display .h1 .h2 .h3 .lead .muted .small | .gradient-text
 Surfaces: .card .card-hover .panel .badge .divider
 Actions:  .btn .btn-primary .btn-secondary .btn-ghost .btn-lg | .input .textarea .label .field
-State:    .center .reveal (fades in on scroll — already wired, just add the class)
 Theme:    dark by default; add data-theme="light" on <html> for the light palette.
+
+ANIMATION — all wired already, you only add the class:
+  .reveal            fade + rise as it scrolls into view (put it on section content)
+  .reveal-left       .reveal-right      slide in from the side
+  .reveal-scale      scale up into place
+  .stagger           on a parent: its .reveal children come in one after another
+  .float             gentle continuous float (hero art, a badge)
+  .pulse-glow        soft pulsing accent glow (a CTA, a live dot)
+  .spin-slow         very slow rotation (decorative rings/orbits)
+  .marquee > .marquee-track   infinite horizontal scroll (logo strip, ticker)
+  .typing            terminal-style caret on a line of text
+  .shimmer           moving sheen across a surface (loading, hero panel)
+  .tilt              subtle 3D tilt toward the cursor (cards) — JS already attached
+  .count-up          number that animates from 0 — set data-to="1234" (and optional data-suffix)
+  .progress > .progress-bar   set style="--val:72%" — fills when scrolled into view
+  .parallax          set data-speed="0.3" — drifts slower than the page as you scroll
+All of it respects prefers-reduced-motion automatically. Use motion where it means something
+(a stat counting up, a hero settling in) — not on everything at once.
 
 Tokens you may use directly: var(--bg) var(--surface) var(--border) var(--text) var(--muted)
 var(--accent) var(--accent-2) var(--radius) var(--shadow)
@@ -219,33 +236,162 @@ a { color: inherit; text-decoration: none; }
 .footer { border-top: 1px solid var(--border); padding: 40px 0; color: var(--muted); font-size: .9rem; }
 
 /* ---------- scroll reveal ---------- */
-.reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
-.reveal.is-visible { opacity: 1; transform: none; }
+.reveal, .reveal-left, .reveal-right, .reveal-scale {
+  opacity: 0;
+  transition: opacity .65s cubic-bezier(.22,.8,.3,1), transform .65s cubic-bezier(.22,.8,.3,1);
+  will-change: opacity, transform;
+}
+.reveal        { transform: translateY(22px); }
+.reveal-left   { transform: translateX(-34px); }
+.reveal-right  { transform: translateX(34px); }
+.reveal-scale  { transform: scale(.93); }
+.reveal.is-visible, .reveal-left.is-visible,
+.reveal-right.is-visible, .reveal-scale.is-visible { opacity: 1; transform: none; }
+
+/* .stagger parent -> children arrive one after another */
+.stagger > * { transition-delay: calc(var(--i, 0) * 90ms); }
+
+/* ---------- continuous motion ---------- */
+@keyframes cg-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+.float { animation: cg-float 5.5s ease-in-out infinite; }
+
+@keyframes cg-glow {
+  0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50%     { box-shadow: 0 0 30px 6px color-mix(in srgb, var(--accent) 28%, transparent); }
+}
+.pulse-glow { animation: cg-glow 2.6s ease-in-out infinite; }
+
+@keyframes cg-spin { to { transform: rotate(360deg); } }
+.spin-slow { animation: cg-spin 26s linear infinite; }
+
+/* ---------- marquee ---------- */
+.marquee { overflow: hidden; position: relative; -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.marquee-track { display: flex; gap: 44px; width: max-content; animation: cg-marquee 26s linear infinite; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+@keyframes cg-marquee { to { transform: translateX(-50%); } }
+
+/* ---------- typing caret ---------- */
+.typing { border-right: 2px solid var(--accent); padding-right: 3px; animation: cg-caret 1s step-end infinite; }
+@keyframes cg-caret { 50% { border-color: transparent; } }
+
+/* ---------- shimmer ---------- */
+.shimmer { position: relative; overflow: hidden; }
+.shimmer::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.10) 50%, transparent 62%);
+  transform: translateX(-100%); animation: cg-shimmer 2.8s ease-in-out infinite;
+}
+@keyframes cg-shimmer { to { transform: translateX(100%); } }
+
+/* ---------- tilt (JS supplies --rx/--ry) ---------- */
+.tilt { transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .18s ease-out; transform-style: preserve-3d; }
+
+/* ---------- progress ---------- */
+.progress { height: 7px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.progress-bar { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width 1.1s cubic-bezier(.22,.8,.3,1); }
+.progress.is-visible .progress-bar { width: var(--val, 0%); }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-  .reveal { opacity: 1; transform: none; }
+  *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; }
+  .reveal, .reveal-left, .reveal-right, .reveal-scale { opacity: 1; transform: none; }
+  .progress-bar { width: var(--val, 0%); }
 }
 """
 
 /** Wires up .reveal without the model having to remember any of it. */
 const val THEME_JS_PATH = "theme.js"
 
-const val THEME_JS = """// ChomuGiri design system — scroll reveal for .reveal elements.
+const val THEME_JS = """// ChomuGiri design system — scroll reveal, counters, tilt, parallax.
+// Everything degrades to "just show it" when the browser can't help or the user asked for
+// reduced motion, so a page is never left invisible because an effect didn't run.
 (function () {
-  var els = document.querySelectorAll('.reveal');
-  if (!els.length) return;
-  if (!('IntersectionObserver' in window)) {
-    els.forEach(function (el) { el.classList.add('is-visible'); });
-    return;
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var REVEAL = '.reveal, .reveal-left, .reveal-right, .reveal-scale, .progress';
+
+  function showAll() {
+    document.querySelectorAll(REVEAL).forEach(function (el) { el.classList.add('is-visible'); });
+    document.querySelectorAll('.count-up').forEach(function (el) {
+      el.textContent = (el.getAttribute('data-to') || el.textContent) + (el.getAttribute('data-suffix') || '');
+    });
   }
+  if (reduced || !('IntersectionObserver' in window)) { showAll(); return; }
+
+  // stagger: index children so CSS can delay each one
+  document.querySelectorAll('.stagger').forEach(function (parent) {
+    Array.prototype.forEach.call(parent.children, function (child, i) {
+      child.style.setProperty('--i', i);
+    });
+  });
+
+  function countUp(el) {
+    var to = parseFloat(el.getAttribute('data-to'));
+    if (isNaN(to)) return;
+    var suffix = el.getAttribute('data-suffix') || '';
+    var decimals = (String(el.getAttribute('data-to')).split('.')[1] || '').length;
+    var start = null, dur = 1400;
+    function step(ts) {
+      if (start === null) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = (to * eased).toFixed(decimals) + suffix;
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (e) {
-      if (e.isIntersecting) { e.target.classList.add('is-visible'); io.unobserve(e.target); }
+      if (!e.isIntersecting) return;
+      e.target.classList.add('is-visible');
+      if (e.target.classList.contains('count-up')) countUp(e.target);
+      io.unobserve(e.target);
     });
   }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
-  els.forEach(function (el) { io.observe(el); });
+
+  document.querySelectorAll(REVEAL + ', .count-up').forEach(function (el) { io.observe(el); });
+
+  // marquee: duplicate the track once so the -50% loop is seamless
+  document.querySelectorAll('.marquee-track').forEach(function (t) {
+    if (t.dataset.cloned) return;
+    t.dataset.cloned = '1';
+    t.innerHTML += t.innerHTML;
+  });
+
+  // tilt toward the cursor (pointer devices only)
+  if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+    document.querySelectorAll('.tilt').forEach(function (card) {
+      card.addEventListener('mousemove', function (ev) {
+        var r = card.getBoundingClientRect();
+        var px = (ev.clientX - r.left) / r.width - 0.5;
+        var py = (ev.clientY - r.top) / r.height - 0.5;
+        card.style.setProperty('--ry', (px * 9).toFixed(2) + 'deg');
+        card.style.setProperty('--rx', (-py * 9).toFixed(2) + 'deg');
+      });
+      card.addEventListener('mouseleave', function () {
+        card.style.setProperty('--rx', '0deg');
+        card.style.setProperty('--ry', '0deg');
+      });
+    });
+  }
+
+  // parallax drift
+  var px = document.querySelectorAll('.parallax');
+  if (px.length) {
+    var ticking = false;
+    window.addEventListener('scroll', function () {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(function () {
+        var y = window.pageYOffset;
+        px.forEach(function (el) {
+          var sp = parseFloat(el.getAttribute('data-speed')) || 0.25;
+          el.style.transform = 'translate3d(0,' + (y * sp).toFixed(1) + 'px,0)';
+        });
+        ticking = false;
+      });
+    }, { passive: true });
+  }
 })();
 """
 
