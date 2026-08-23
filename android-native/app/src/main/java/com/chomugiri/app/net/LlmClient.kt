@@ -85,6 +85,26 @@ object LlmClient {
      * hits the exact same dead radio state the first one did and fails identically. Pausing lets
      * a tower handover or a wifi/mobile flip actually finish before trying again.
      */
+    /**
+     * Statuses that mean "the fleet is busy, come back", not "your request is wrong".
+     *
+     * Measured against NVIDIA NIM directly: firing 16 concurrent requests at
+     * nemotron-3-ultra-550b returned 429 Too Many Requests and 503 "Service temporarily
+     * overloaded" for 9 of them. These were being thrown straight to the user as a hard failure,
+     * so a build could die outright just because NVIDIA's GPU pool happened to be full for a
+     * second — the one case where waiting genuinely does fix it.
+     */
+    private fun isRetryableStatus(code: Int): Boolean =
+        code == 429 || code == 500 || code == 502 || code == 503 || code == 504
+
+    /** Honour the server's own Retry-After when it sends one; fall back to our backoff. */
+    private fun retryDelayFor(resp: okhttp3.Response, attempt: Int): Long {
+        val header = resp.header("Retry-After")?.trim()?.toLongOrNull()
+        val ours = RETRY_BACKOFF_MS[(attempt - 1).coerceAtMost(RETRY_BACKOFF_MS.lastIndex)]
+        // Cap it: a provider asking us to sit for minutes is worse than failing with a clear error.
+        return if (header != null) (header * 1000).coerceIn(1_000, 15_000) else ours
+    }
+
     private const val MAX_ATTEMPTS = 4
     private val RETRY_BACKOFF_MS = longArrayOf(1_000, 3_000, 7_000)
 
@@ -125,7 +145,7 @@ object LlmClient {
                 .post(bodyStr.toRequestBody(JSON))
                 .build()
             try {
-                http.newCall(req).execute().use { resp ->
+                val retryIn: Long? = http.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         val errText = resp.body?.string().orEmpty()
                         // A 404 from a chat endpoint almost never means "server missing" — it means
@@ -136,6 +156,18 @@ object LlmClient {
                                 role,
                                 "$role: the model \"${cfg.model}\" doesn't exist on ${cfg.baseUrl.removePrefix("https://").substringBefore('/')}. " +
                                     "Pick a different model for this role in Settings.",
+                            )
+                        }
+                        // Busy, not broken: back off and try again rather than killing the run.
+                        if (isRetryableStatus(resp.code) && !emittedAny && attempt < MAX_ATTEMPTS) {
+                            return@use retryDelayFor(resp, attempt)
+                        }
+                        if (isRetryableStatus(resp.code)) {
+                            throw LlmException(
+                                role,
+                                "$role: the provider is overloaded right now (HTTP ${resp.code}) and " +
+                                    "kept refusing after $attempt attempts. Try again in a moment, or " +
+                                    "pick a lighter tier.",
                             )
                         }
                         throw LlmException(role, "$role request failed (HTTP ${resp.code}): ${errText.take(300)}")
@@ -165,6 +197,11 @@ object LlmClient {
                             emittedAny = true
                         }
                     }
+                    null
+                }
+                if (retryIn != null) {
+                    delay(retryIn)
+                    continue
                 }
                 break
             } catch (e: LlmException) {
