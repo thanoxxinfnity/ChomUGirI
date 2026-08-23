@@ -355,7 +355,11 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 )
                 Spacer(Modifier.height(10.dp))
                 Field("Terminal URL (https:// or wss://)", settings.terminalUrl, uri = true) { v ->
-                    vm.updateSettings { it.copy(terminalUrl = v) }
+                    // Cleaned on the way in, not only at connect time. A tunnel URL is almost
+                    // always pasted from a wrapped terminal line, which carries a real newline
+                    // into the middle of the host — so the stored value is never broken in the
+                    // first place, and what you see in this field is what will actually be used.
+                    vm.updateSettings { it.copy(terminalUrl = v.replace(Regex("\\s+"), "")) }
                 }
                 Spacer(Modifier.height(8.dp))
                 Field("ttyd auth token (optional)", settings.terminalAuthToken, secret = true) { v ->
