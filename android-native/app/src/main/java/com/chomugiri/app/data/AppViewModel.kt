@@ -350,6 +350,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     val id = artifactId ?: UUID.randomUUID().toString()
                     val isNew = artifactId == null
                     artifactId = id
+                    // Diffed against what the project held a moment ago, so the +/- counts shown
+                    // in chat are the real change this turn made — not the file's total size.
+                    val previousFiles = _artifacts.value.firstOrNull { it.id == id }?.files ?: emptyList()
+                    val actions = fileActionsBetween(previousFiles, ev.files)
+                    if (actions.isNotEmpty()) {
+                        updateMessage(convId, msgId) { m ->
+                            val merged = m.fileActions.associateBy { it.path }.toMutableMap()
+                            actions.forEach { a ->
+                                // A file created earlier this turn and revised by the audit loop
+                                // stays "Created", with the counts rolled forward.
+                                val prior = merged[a.path]
+                                merged[a.path] = if (prior != null && prior.verb == "Created") {
+                                    a.copy(verb = "Created", added = prior.added + a.added, removed = prior.removed + a.removed)
+                                } else a
+                            }
+                            m.copy(fileActions = merged.values.toList())
+                        }
+                    }
                     // Never the raw prompt: this title is also what the deploy is named, so it
                     // becomes the public URL. Clean it locally now, refine with a real name after.
                     val existingTitle = _artifacts.value.firstOrNull { it.id == id }?.title

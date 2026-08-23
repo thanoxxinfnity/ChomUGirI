@@ -190,6 +190,20 @@ data class Artifact(
     val buildAttempts: List<BuildAttempt> = emptyList(),
 )
 
+/**
+ * One file the swarm actually touched on this turn, with the real line counts of what changed.
+ * Rendered in the chat as a compact "Created app/page.tsx +110 -0" row so the work is visible as
+ * it lands, instead of only existing inside the project panel.
+ */
+@Serializable
+data class FileAction(
+    val path: String,
+    /** "Created" or "Edited" — derived from whether the file existed before this turn. */
+    val verb: String,
+    val added: Int,
+    val removed: Int,
+)
+
 @Serializable
 data class ThinkingStep(val text: String, val done: Boolean = false)
 
@@ -202,6 +216,8 @@ data class Message(
     val artifactId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val steps: List<ThinkingStep> = emptyList(),
+    /** Files this turn created or changed, with real +/- line counts. */
+    val fileActions: List<FileAction> = emptyList(),
     val streaming: Boolean = false,
     val error: String? = null,
     /** Which model actually produced this reply — "Fast Chat", a forced role's label, or "Deep Research". */

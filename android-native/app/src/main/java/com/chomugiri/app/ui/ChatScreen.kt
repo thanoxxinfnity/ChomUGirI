@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -157,6 +158,11 @@ private fun MessageRow(
         // moment you hit send, rather than a bare "Thinking..." that later swaps for a card.
         if (!isUser && (msg.steps.isNotEmpty() || (msg.streaming && msg.error == null))) {
             ThinkingBubble(msg)
+            Spacer(Modifier.height(6.dp))
+        }
+
+        if (!isUser && msg.fileActions.isNotEmpty()) {
+            FileActionList(msg.fileActions) { msg.artifactId?.let(onOpenArtifact) }
             Spacer(Modifier.height(6.dp))
         }
 
@@ -630,6 +636,75 @@ private fun PulsingIcon(
         icon, null, tint = tint,
         modifier = Modifier.size(15.dp).scale(if (animate) scale else 1f),
     )
+}
+
+/**
+ * What the swarm actually did to the project, one compact row per file, landing in the chat as
+ * the work happens rather than staying buried in the project panel. Each row animates in on
+ * arrival and opens the project when tapped.
+ */
+@Composable
+private fun FileActionList(actions: List<com.chomugiri.app.core.FileAction>, onOpen: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().widthIn(max = 560.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        actions.forEach { a ->
+            val appear = remember(a.path) {
+                androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true }
+            }
+            AnimatedVisibility(
+                visibleState = appear,
+                enter = fadeIn(tween(240)) +
+                    slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { -it / 6 },
+            ) {
+                FileActionRow(a, onOpen)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileActionRow(action: com.chomugiri.app.core.FileAction, onOpen: () -> Unit) {
+    Surface(
+        color = BgElevated,
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderCol, RoundedCornerShape(10.dp))
+            .clickable(onClick = onOpen),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                action.verb,
+                style = MaterialTheme.typography.labelSmall,
+                color = FgMuted,
+            )
+            Spacer(Modifier.width(7.dp))
+            Text(
+                action.path.substringAfterLast('/'),
+                style = MonoStyle,
+                color = FgPrimary,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(8.dp))
+            // Always both numbers, even a zero: "+110 -0" reads as a measured diff, while a
+            // bare "+110" leaves you wondering whether anything was removed.
+            Text("+${action.added}", style = MonoStyle, color = Success)
+            Spacer(Modifier.width(5.dp))
+            Text("-${action.removed}", style = MonoStyle, color = Danger)
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                Icons.Default.ChevronRight, "Open project",
+                tint = FgMuted, modifier = Modifier.size(15.dp),
+            )
+        }
+    }
 }
 
 @Composable
