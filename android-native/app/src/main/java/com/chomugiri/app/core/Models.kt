@@ -67,8 +67,14 @@ data class AppSettings(
 }
 
 fun defaultModelFor(role: RoleKey): String = when (role) {
-    RoleKey.FAST -> "meta/llama-3.1-8b-instruct"
-    RoleKey.KIMI -> "meta/llama-3.1-70b-instruct"
+    // Was llama-3.1-8b — a 2024-era 8B. nemotron-3-nano is a far newer MoE that only activates
+    // ~3B per token, so routing/chat stays fast while being much less prone to misjudging things.
+    RoleKey.FAST -> "nvidia/nemotron-3-nano-30b-a3b"
+    // The single biggest quality bug in this app: the role is *named* Kimi K3 and prompted as
+    // Kimi K3, but pointed at meta/llama-3.1-70b — a 2024 general model that writes plausible but
+    // visually generic front-end code. moonshotai/kimi-k3 is genuinely available on NIM (verified
+    // against its live /models catalog), so the coder is now actually the model it claims to be.
+    RoleKey.KIMI -> "moonshotai/kimi-k3"
     // glm-5.2 hit end-of-life 2026-08-21 (confirmed via a live HTTP 410 "Gone" from the provider)
     // and glm-5.3 is the current live successor — verified against the provider's own /models
     // catalog before picking it, not guessed.

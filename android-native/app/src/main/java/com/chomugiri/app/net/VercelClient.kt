@@ -69,8 +69,43 @@ object VercelClient {
                     ?: "Vercel deploy failed (HTTP ${resp.code})"
                 throw VercelException(msg)
             }
-            val url = json.optString("url").takeIf { it.isNotBlank() }
+
+            // Vercel's "Standard Protection" is on by default for new projects, and it covers the
+            // generated deployment URL (the one with the random hash) that `url` carries — opening
+            // it just shows Vercel's login page instead of the site, which is what made every
+            // deployed link look broken. Turning it off is what actually makes a generated site a
+            // public website; without it the link is useless to share.
+            json.optString("projectId").takeIf { it.isNotBlank() }
+                ?.let { disableDeploymentProtection(token, it) }
+
+            // Prefer a production alias (clean domain, never protection-gated) over the hashed
+            // deployment URL, falling back to it when no alias came back.
+            val alias = json.optJSONArray("alias")
+                ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optString(it).takeIf(String::isNotBlank) } }
+                ?.minByOrNull { it.length }
+            val url = alias ?: json.optString("url").takeIf { it.isNotBlank() }
             DeployResult(url = url?.let { "https://$it" }, id = json.optString("id"))
+        }
+    }
+
+    /**
+     * Best-effort: a team/plan that enforces protection will refuse this, and that is not worth
+     * failing an otherwise-successful deploy over — the deploy still happened, the link is just
+     * login-gated, which the caller can still hand to the user.
+     */
+    private fun disableDeploymentProtection(token: String, projectId: String) {
+        try {
+            val body = JSONObject()
+                .put("ssoProtection", JSONObject.NULL)
+                .put("passwordProtection", JSONObject.NULL)
+            val req = Request.Builder()
+                .url("https://api.vercel.com/v9/projects/$projectId")
+                .addHeader("Authorization", "Bearer $token")
+                .patch(body.toString().toRequestBody(JSON))
+                .build()
+            http.newCall(req).execute().close()
+        } catch (e: Exception) {
+            // Deliberately swallowed — see the doc comment above.
         }
     }
 }

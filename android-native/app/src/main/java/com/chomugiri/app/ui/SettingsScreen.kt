@@ -94,6 +94,25 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
                 ) { Text("Apply to all 5 roles") }
+
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Model ids you set earlier are kept as-is, so a newer recommended default " +
+                        "never silently overwrites your choice. This applies the current " +
+                        "recommendations (keeping your keys) — worth doing if your coder role is " +
+                        "still on an older model, since that is what actually writes the code.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FgMuted,
+                )
+                OutlinedButton(onClick = {
+                    vm.updateSettings { s ->
+                        var next = s
+                        ROLE_ORDER.forEach { role ->
+                            next = next.withProvider(role, next.provider(role).copy(model = defaultModelFor(role)))
+                        }
+                        next
+                    }
+                }) { Text("Use recommended models for all roles", color = Accent2) }
             }
 
             ROLE_ORDER.forEach { role ->
