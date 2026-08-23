@@ -25,6 +25,13 @@ const val NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 /**
+ * Gemini speaks OpenAI's chat/completions shape at this path, so it works as an ordinary chat or
+ * coding provider through the existing client with no special-casing — verified live: the
+ * endpoint answers "Please pass a valid API key" rather than 404.
+ */
+const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+/**
  * Every field here is user-supplied. No key of any kind is compiled into the app — the defaults
  * below carry base URLs and model ids only.
  */
@@ -51,7 +58,16 @@ data class AppSettings(
     val themeMode: String = "dark",
     /** User-saved terminal commands, shown as tap-to-run chips on the Terminal tab. */
     val terminalMacros: List<String> = emptyList(),
-    /** Real image generation for {{IMAGE: ...}} markers in generated projects. Never bundled. */
+    /**
+     * Which provider fills {{IMAGE: ...}} markers. NIM is the default because the same nvapi- key
+     * that already drives the chat roles also reaches NVIDIA's image models, so there is nothing
+     * extra to sign up for — and FLUX.1-dev there is genuinely strong. Gemini stays available for
+     * anyone who prefers it.
+     */
+    val imageProvider: String = "nim",
+    val nimImageApiKey: String = "",
+    val nimImageModel: String = com.chomugiri.app.net.NIM_DEFAULT_IMAGE_MODEL,
+    /** Gemini's key — usable for images, and also as a normal chat/coding provider (see GEMINI_BASE_URL). */
     val geminiApiKey: String = "",
     val geminiModel: String = "gemini-2.5-flash-image",
     /** Real video generation via Hugging Face's Inference Providers router. Never bundled — a

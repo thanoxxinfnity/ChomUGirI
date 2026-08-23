@@ -2,6 +2,7 @@ package com.chomugiri.app.core
 
 import android.util.Base64
 import com.chomugiri.app.net.GeminiClient
+import com.chomugiri.app.net.NvidiaImageClient
 
 /** The convention Kimi is prompted to use wherever a real photo/illustration belongs. */
 private val IMAGE_MARKER = Regex("\\{\\{IMAGE:\\s*([^}]{1,200}?)\\s*\\}\\}")
@@ -51,8 +52,22 @@ private fun placeholderDataUri(description: String): String {
 }
 
 /**
+ * One real generation through whichever provider is configured. Returns null (rather than
+ * throwing) when that provider simply has no key set, so the caller falls back quietly instead
+ * of reporting an error the user hasn't actually hit.
+ */
+private suspend fun generateOne(desc: String, settings: AppSettings): String? = when (settings.imageProvider) {
+    "gemini" ->
+        if (settings.geminiApiKey.isBlank()) null
+        else GeminiClient.generateImageDataUri(settings.geminiApiKey, settings.geminiModel, desc)
+    else ->
+        if (settings.nimImageApiKey.isBlank()) null
+        else NvidiaImageClient.generateImageDataUri(settings.nimImageApiKey, settings.nimImageModel, desc)
+}
+
+/**
  * Finds every {{IMAGE: description}} marker across the project's files and replaces it with a
- * real image (Gemini, if a key is configured) or a graceful gradient fallback — so nothing ever
+ * real image (via the configured provider) or a graceful on-palette fallback — so nothing ever
  * ships with a broken placeholder string visible on the page.
  */
 suspend fun resolveImageMarkers(
@@ -66,15 +81,11 @@ suspend fun resolveImageMarkers(
 
     val resolved = LinkedHashMap<String, String>()
     descriptions.take(MAX_IMAGES).forEach { desc ->
-        resolved[desc] = if (settings.geminiApiKey.isNotBlank()) {
-            try {
-                onProgress("Generating image: ${desc.take(60)}...")
-                GeminiClient.generateImageDataUri(settings.geminiApiKey, settings.geminiModel, desc)
-            } catch (e: Exception) {
-                onProgress("Image generation failed: ${e.message ?: "unknown error"} — using a placeholder. (Settings > Image Generation > Test the key if this keeps happening.)")
-                placeholderDataUri(desc)
-            }
-        } else {
+        resolved[desc] = try {
+            onProgress("Generating image: ${desc.take(60)}...")
+            generateOne(desc, settings) ?: placeholderDataUri(desc)
+        } catch (e: Exception) {
+            onProgress("Image generation failed: ${e.message ?: "unknown error"} — using a placeholder. (Settings > Image Generation > Test the key if this keeps happening.)")
             placeholderDataUri(desc)
         }
     }

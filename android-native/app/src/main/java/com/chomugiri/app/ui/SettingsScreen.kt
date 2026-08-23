@@ -210,6 +210,45 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                             }
                         }
                     }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Or Gemini — it speaks the same OpenAI chat format, so it works here as a " +
+                            "normal chat/coding model, not just for images. Uses your Google AI " +
+                            "Studio key in the API key field above.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FgMuted,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            "Gemini 2.5 Pro" to "gemini-2.5-pro",
+                            "Gemini 2.5 Flash" to "gemini-2.5-flash",
+                            "Gemini 2.5 Flash-Lite" to "gemini-2.5-flash-lite",
+                        ).forEach { (label, slug) ->
+                            Surface(
+                                color = BgDark,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    vm.updateSettings {
+                                        it.withProvider(
+                                            role,
+                                            it.provider(role).copy(baseUrl = GEMINI_BASE_URL, model = slug),
+                                        )
+                                    }
+                                },
+                            ) {
+                                Text(
+                                    label,
+                                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Accent,
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     ProviderHealthCheck(role, cfg)
                 }
@@ -301,25 +340,85 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 }
             }
 
-            Section("Image Generation (Gemini)") {
+            Section("Image Generation") {
                 Text(
                     "Real generated images for projects — used automatically wherever the coder " +
-                        "wants a real photo/illustration instead of a broken placeholder. Get a " +
-                        "key from Google AI Studio. With no key set, those spots get a plain " +
-                        "gradient instead — never a broken image link.",
+                        "wants a real photo instead of a broken placeholder. With no key set, " +
+                        "those spots get an on-palette gradient — never a broken image link.",
                     style = MaterialTheme.typography.bodySmall,
                     color = FgMuted,
                 )
                 Spacer(Modifier.height(10.dp))
-                Field("Gemini API key", settings.geminiApiKey, secret = true) { v ->
-                    vm.updateSettings { it.copy(geminiApiKey = v) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("nim" to "NVIDIA NIM", "gemini" to "Gemini").forEach { (id, label) ->
+                        val on = settings.imageProvider == id
+                        Surface(
+                            color = if (on) Accent.copy(alpha = 0.18f) else BgDark,
+                            shape = RoundedCornerShape(9.dp),
+                            modifier = Modifier.clickable { vm.updateSettings { it.copy(imageProvider = id) } },
+                        ) {
+                            Text(
+                                label,
+                                Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (on) Accent else FgMuted,
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                Field("Model", settings.geminiModel) { v ->
-                    vm.updateSettings { it.copy(geminiModel = v) }
+                Spacer(Modifier.height(12.dp))
+
+                if (settings.imageProvider == "gemini") {
+                    Field("Gemini API key", settings.geminiApiKey, secret = true) { v ->
+                        vm.updateSettings { it.copy(geminiApiKey = v) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Field("Model", settings.geminiModel) { v ->
+                        vm.updateSettings { it.copy(geminiModel = v) }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    GeminiHealthCheck(settings.geminiApiKey, settings.geminiModel)
+                } else {
+                    Text(
+                        "Same nvapi- key your chat roles use — NVIDIA's image models live on a " +
+                            "different host, so it is entered separately here.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FgMuted,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Field("NVIDIA API key", settings.nimImageApiKey, secret = true) { v ->
+                        vm.updateSettings { it.copy(nimImageApiKey = v) }
+                    }
+                    val coderKey = settings.provider(RoleKey.KIMI).apiKey
+                    if (coderKey.startsWith("nvapi-") && coderKey != settings.nimImageApiKey) {
+                        TextButton(onClick = { vm.updateSettings { it.copy(nimImageApiKey = coderKey) } }) {
+                            Text("Use my coder role's key", color = Accent2, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Model", style = MaterialTheme.typography.labelSmall, color = FgMuted)
+                    Spacer(Modifier.height(4.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        com.chomugiri.app.net.NIM_IMAGE_MODELS.forEach { (id, label) ->
+                            val on = settings.nimImageModel == id
+                            Surface(
+                                color = if (on) Accent.copy(alpha = 0.16f) else BgDark,
+                                shape = RoundedCornerShape(9.dp),
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { vm.updateSettings { it.copy(nimImageModel = id) } },
+                            ) {
+                                Text(
+                                    label,
+                                    Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (on) Accent else FgMuted,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    NvidiaImageHealthCheck(settings.nimImageApiKey, settings.nimImageModel)
                 }
-                Spacer(Modifier.height(10.dp))
-                GeminiHealthCheck(settings.geminiApiKey, settings.geminiModel)
             }
 
             Section("Video Generation (Hugging Face)") {
@@ -439,6 +538,48 @@ private fun GeminiHealthCheck(apiKey: String, model: String) {
                         val started = System.currentTimeMillis()
                         state = try {
                             com.chomugiri.app.net.GeminiClient.generateImageDataUri(apiKey, model, "a small blue circle on a white background")
+                            PingUiState.Done(true, System.currentTimeMillis() - started, "OK")
+                        } catch (e: Exception) {
+                            PingUiState.Done(false, System.currentTimeMillis() - started, e.message ?: "Failed")
+                        }
+                    }
+                },
+                enabled = state !is PingUiState.Loading && apiKey.isNotBlank(),
+            ) {
+                Icon(Icons.Default.NetworkCheck, null, tint = Accent2, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Test image generation", color = Accent2, style = MaterialTheme.typography.bodySmall)
+            }
+            if (state is PingUiState.Loading) {
+                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Accent2)
+            } else if (state is PingUiState.Done && (state as PingUiState.Done).ok) {
+                Text("OK · ${(state as PingUiState.Done).latencyMs}ms", style = MaterialTheme.typography.labelSmall, color = Success)
+            }
+        }
+        (state as? PingUiState.Done)?.let { s ->
+            if (!s.ok) {
+                Text(s.message, style = MaterialTheme.typography.labelSmall, color = Danger, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+    }
+}
+
+/** A real image-generation call against NVIDIA's genai endpoint — proves the key/model work. */
+@Composable
+private fun NvidiaImageHealthCheck(apiKey: String, model: String) {
+    var state by remember(apiKey, model) { mutableStateOf<PingUiState?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = {
+                    state = PingUiState.Loading
+                    scope.launch {
+                        val started = System.currentTimeMillis()
+                        state = try {
+                            com.chomugiri.app.net.NvidiaImageClient
+                                .generateImageDataUri(apiKey, model, "a small blue circle on a white background")
                             PingUiState.Done(true, System.currentTimeMillis() - started, "OK")
                         } catch (e: Exception) {
                             PingUiState.Done(false, System.currentTimeMillis() - started, e.message ?: "Failed")
