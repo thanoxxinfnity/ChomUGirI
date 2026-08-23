@@ -306,8 +306,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
                 is PipelineEvent.Files -> {
                     val id = artifactId ?: UUID.randomUUID().toString()
+                    val isNew = artifactId == null
                     artifactId = id
-                    val title = prompt.trim().take(48).ifBlank { "Generated project" }
+                    // Never the raw prompt: this title is also what the deploy is named, so it
+                    // becomes the public URL. Clean it locally now, refine with a real name after.
+                    val existingTitle = _artifacts.value.firstOrNull { it.id == id }?.title
+                    val title = existingTitle ?: cleanProjectName(prompt)
+                    if (isNew) autoNameProject(id, convId, prompt)
                     val existing = _artifacts.value.firstOrNull { it.id == id }
                     val art = Artifact(
                         id, title, ev.files, existing?.createdAt ?: System.currentTimeMillis(),
@@ -366,6 +371,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun togglePin(id: String) {
         _artifacts.value = _artifacts.value.map { if (it.id == id) it.copy(pinned = !it.pinned) else it }
         persistArtifacts()
+    }
+
+    /**
+     * One cheap background call to give the project a real name instead of the raw prompt. Runs
+     * detached so it never delays the build, and silently keeps the local [cleanProjectName]
+     * fallback if it fails — a naming call is not worth surfacing an error over.
+     */
+    private fun autoNameProject(artifactId: String, convId: String, prompt: String) {
+        viewModelScope.launch {
+            val name = try {
+                LlmClient.complete(
+                    _settings.value.provider(RoleKey.FAST), "Namer",
+                    listOf(ChatTurn("user", PROJECT_NAME_PROMPT.format(prompt.take(300)))),
+                    temperature = 0.3, maxTokens = 16,
+                ).trim().trim('"', '\'', '.', '`').lines().first().trim()
+            } catch (e: Exception) {
+                return@launch
+            }
+            // Guard against a model that ignores the format and returns a sentence.
+            if (name.isBlank() || name.length > 40 || name.split(" ").size > 5) return@launch
+            renameArtifact(artifactId, name)
+            renameConversation(convId, name)
+            persistConversations()
+        }
     }
 
     fun renameArtifact(id: String, title: String) {

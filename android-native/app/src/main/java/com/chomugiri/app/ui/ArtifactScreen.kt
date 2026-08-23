@@ -40,7 +40,7 @@ import com.chomugiri.app.data.DeployUiState
 import com.chomugiri.app.net.TerminalClient
 
 private enum class ArtifactTab(val label: String) {
-    CODE("Code"), RUN("Run"), APK("Android APK"), TERMINAL("Agent Log")
+    CODE("Code"), RUN("Run"), SECRETS("Secrets"), APK("Android APK"), TERMINAL("Agent Log")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +52,8 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
     var renamingProject by remember { mutableStateOf(false) }
     var projectSearchOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val settings by vm.settings.collectAsState()
 
     val busyConversations by vm.busyConversations.collectAsState()
     val generating = busyConversations.isNotEmpty()
@@ -149,27 +151,36 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
             if (generating) {
                 DeployBanner("Deploy is disabled while the swarm is still working.", FgMuted)
             } else when (val d = deployState) {
-                is DeployUiState.Success -> DeployBanner(
-                    d.url?.let { "Deployed — $it" } ?: "Deployed.",
-                    Success,
-                    onClick = d.url?.let { url ->
-                        {
-                            try {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Couldn't open that link.", Toast.LENGTH_SHORT).show()
-                            }
+                is DeployUiState.Success -> LaunchBar(
+                    url = d.url,
+                    onOpen = { url ->
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Couldn't open that link.", Toast.LENGTH_SHORT).show()
                         }
                     },
+                    onCopy = { url ->
+                        clipboard.setText(AnnotatedString(url))
+                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                    },
+                    onRedeploy = { vm.deployArtifact(artifact) },
                 )
                 is DeployUiState.Failed -> DeployBanner(d.message, Danger)
-                else -> Unit
+                // Nothing deployed yet — the whole point of finishing a build is shipping it, so
+                // that call to action is a real bar here rather than only a small toolbar icon.
+                else -> ReadyToLaunchBar(
+                    hasToken = settings.vercelToken.isNotBlank(),
+                    onDeploy = { vm.deployArtifact(artifact) },
+                )
             }
 
-            TabRow(
+            // Scrollable so a fifth tab doesn't get squeezed to unreadable width on a phone.
+            ScrollableTabRow(
                 selectedTabIndex = tab.ordinal,
                 containerColor = BgDark,
                 contentColor = Accent,
+                edgePadding = 8.dp,
             ) {
                 ArtifactTab.entries.forEach { t ->
                     Tab(
@@ -185,8 +196,87 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
             canvas -> CanvasView(vm, artifact, selectedPath, { selectedPath = it }) { canvas = false }
             tab == ArtifactTab.CODE -> CodeView(vm, artifact, selectedPath, { selectedPath = it })
             tab == ArtifactTab.RUN -> RunView(artifact)
+            tab == ArtifactTab.SECRETS -> SecretsView(vm, artifact)
             tab == ArtifactTab.APK -> ApkView(vm, artifact)
             else -> AgentLogView(vm)
+        }
+    }
+}
+
+/** The live-site bar shown once a project is actually deployed — open, copy, or ship again. */
+@Composable
+private fun LaunchBar(
+    url: String?,
+    onOpen: (String) -> Unit,
+    onCopy: (String) -> Unit,
+    onRedeploy: () -> Unit,
+) {
+    Surface(color = Success.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.CloudDone, null, tint = Success, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Live", style = MaterialTheme.typography.labelSmall, color = Success)
+                Text(
+                    url ?: "Deployed, but Vercel didn't return a URL.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FgPrimary,
+                    maxLines = 1,
+                )
+            }
+            if (url != null) {
+                IconButton(onClick = { onCopy(url) }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.ContentCopy, "Copy link", tint = FgMuted, modifier = Modifier.size(16.dp))
+                }
+                IconButton(onClick = onRedeploy, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Refresh, "Deploy again", tint = FgMuted, modifier = Modifier.size(17.dp))
+                }
+                Spacer(Modifier.width(4.dp))
+                Button(
+                    onClick = { onOpen(url) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Success),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                ) {
+                    Icon(Icons.Default.OpenInNew, null, tint = Color.White, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Open", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+/** Shown the moment a build finishes: the project is ready, one tap puts it on the internet. */
+@Composable
+private fun ReadyToLaunchBar(hasToken: Boolean, onDeploy: () -> Unit) {
+    Surface(color = Accent.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.RocketLaunch, null, tint = Accent, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Ready to launch", style = MaterialTheme.typography.bodySmall, color = FgPrimary)
+                Text(
+                    if (hasToken) "Publish it to a live URL you can share."
+                    else "Add a Vercel token in Settings to publish.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = FgMuted,
+                    maxLines = 1,
+                )
+            }
+            Button(
+                onClick = onDeploy,
+                enabled = hasToken,
+                colors = ButtonDefaults.buttonColors(containerColor = Accent),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+            ) {
+                Text("Launch", color = Color.White, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }
@@ -667,8 +757,30 @@ private fun RunView(artifact: Artifact) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// APK / Terminal (unchanged behaviour, same as before)
+// Secrets / APK / Terminal
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Env vars used to live buried inside the APK tab, where nobody found them. They are a
+ * first-class per-project concern (same as Replit's Secrets), so they get their own tab.
+ */
+@Composable
+private fun SecretsView(vm: AppViewModel, artifact: Artifact) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Secrets & environment variables", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Stored on this device with the project, never bundled into the app. Exported into " +
+                "the shell before any terminal build command runs, and sent with the project on " +
+                "deploy — so an API key stays out of your source files.",
+            style = MaterialTheme.typography.bodySmall,
+            color = FgMuted,
+        )
+        EnvVarsSection(artifact) { vars -> vm.updateEnvVars(artifact.id, vars) }
+    }
+}
 
 @Composable
 private fun ApkView(vm: AppViewModel, artifact: Artifact) {
@@ -685,7 +797,6 @@ private fun ApkView(vm: AppViewModel, artifact: Artifact) {
         if (artifact.lastAuditIssues.isNotEmpty()) {
             AuditFindingsSection(artifact.lastAuditIssues)
         }
-        EnvVarsSection(artifact) { vars -> vm.updateEnvVars(artifact.id, vars) }
         if (artifact.buildAttempts.isNotEmpty()) {
             BuildHistorySection(artifact.buildAttempts)
         }

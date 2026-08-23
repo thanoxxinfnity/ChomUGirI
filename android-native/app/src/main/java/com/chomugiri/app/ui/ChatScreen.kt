@@ -525,12 +525,15 @@ private fun EmptyState(
     ) {
         Logomark(size = 56.dp)
         Spacer(Modifier.height(18.dp))
-        Text("ChomuGiri", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "What are we building today?",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+        )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Just talk and you get a fast reply. Ask for an app, site, or script and the full " +
-                "swarm takes over automatically — then Code, Canvas, .zip export and a real APK " +
-                "build show up on the project itself.",
+            "Describe it and the swarm builds, audits and ships it — Code, Canvas, live preview, " +
+                ".zip export, one-tap deploy and a real APK build all land on the project.",
             style = MaterialTheme.typography.bodyMedium,
             color = FgMuted,
             textAlign = TextAlign.Center,

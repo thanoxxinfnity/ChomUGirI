@@ -186,6 +186,27 @@ about what's still unclear (which features, what it should look like, what stack
 for). Once they've answered enough that the request is concrete, tell them plainly they can now
 ask you to build it and it will hand off automatically."""
 
+/**
+ * Names a project from the user's request. Kept deliberately tiny — this runs as one cheap extra
+ * call purely so a project isn't titled with the raw prompt text ("please make the website kuch
+ * nahi prototype ha"), which also becomes the deployed URL.
+ */
+const val PROJECT_NAME_PROMPT = """Give a short, clean product name for what the user asked to build.
+
+Rules:
+- 2 to 4 words, Title Case, English only.
+- Name the THING being built, not the user's phrasing. Drop filler like "please", "make", "bana do", "bro", "yar", "prototype", "website".
+- No quotes, no punctuation, no explanation. Output ONLY the name.
+
+Examples:
+"please make me a portfolio site yar" -> Personal Portfolio
+"ek todo app bana do na bro" -> Todo App
+"make a real website whare full details about human evolution" -> Human Evolution Guide
+
+Request: "%s"
+
+Name:"""
+
 /** Turns a topic into a real slide-by-slide outline for the PPTX generator — see PptxGenerator.kt. */
 const val PPTX_OUTLINE_PROMPT = """You are ChomuGiri's presentation planner. Given the user's request, plan a real PowerPoint deck:
 5 to 10 slides, each with a short title and 2-5 concise bullet points (not full paragraphs — a

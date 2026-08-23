@@ -42,6 +42,34 @@ private val DISCUSSION_PHRASES = listOf(
     "what do you think", "before we build", "before building",
 )
 
+/**
+ * Filler that shows up in a spoken-style request but never belongs in a project name — and the
+ * project name becomes the deployed URL, so "please make the website kuch nahi prototype ha"
+ * literally shipped as the domain. This is the instant local fallback; [PROJECT_NAME_PROMPT]
+ * refines it asynchronously right after.
+ */
+private val NAME_FILLER = setOf(
+    "please", "make", "makes", "made", "build", "create", "generate", "a", "an", "the", "me",
+    "my", "for", "of", "with", "and", "to", "real", "full", "some", "kuch", "nahi", "bana",
+    "banao", "banado", "bana-do", "kar", "karo", "karna", "do", "de", "dena", "na", "yar",
+    "yaar", "bro", "please-yar", "ek", "sa", "ka", "ki", "ko", "he", "ha", "hai", "prototype",
+    "website", "site", "app", "page", "whare", "where", "wala", "wali", "accha", "acha",
+)
+
+/**
+ * Best-effort local project name — used immediately so the UI never shows the raw prompt, and
+ * kept as the fallback if the AI naming call fails.
+ */
+fun cleanProjectName(prompt: String): String {
+    val words = prompt.lowercase()
+        .replace(Regex("[^a-z0-9\\s]"), " ")
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() && it !in NAME_FILLER && it.length > 1 }
+        .take(4)
+    if (words.isEmpty()) return "New Project"
+    return words.joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
+}
+
 /** Matches a keyword as a whole word/phrase, not as a substring — "api" must not match inside "capital". */
 private fun containsKeyword(text: String, keyword: String): Boolean {
     val escaped = Regex.escape(keyword.trim())
