@@ -56,7 +56,14 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
     val settings by vm.settings.collectAsState()
 
     val busyConversations by vm.busyConversations.collectAsState()
-    val generating = busyConversations.isNotEmpty()
+    val conversations by vm.conversations.collectAsState()
+    // Scoped to the conversation that actually owns this artifact — a build running in some
+    // OTHER chat must not gray out deploy here. That mismatch was the reported "swarm is still
+    // working" bug: this used to be `busyConversations.isNotEmpty()`, true globally.
+    val owningConvId = remember(conversations, artifact.id) {
+        conversations.firstOrNull { c -> c.messages.any { it.artifactId == artifact.id } }?.id
+    }
+    val generating = owningConvId != null && owningConvId in busyConversations
     val deployStates by vm.deployState.collectAsState()
     val deployState = deployStates[artifact.id]
     val deployDisabled = generating || deployState is DeployUiState.Deploying
