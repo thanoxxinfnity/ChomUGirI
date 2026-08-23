@@ -175,6 +175,51 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
+                        "GLM: NVIDIA retired it — glm-5.2 answers HTTP 410 \"end of life 2026-08-21\" " +
+                            "there and no other GLM exists on NIM. It is very much alive on " +
+                            "OpenRouter though, and glm-5.2:free genuinely costs \$0 (256K context). " +
+                            "These set the endpoint and model together; put an OpenRouter key in the " +
+                            "API key field above.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = FgMuted,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        listOf(
+                            Triple("GLM 5.2 FREE", "z-ai/glm-5.2:free", true),
+                            Triple("GLM 5.2", "z-ai/glm-5.2", false),
+                            Triple("GLM 5.3", "z-ai/glm-5.3", false),
+                            Triple("GLM 4.7 Flash", "z-ai/glm-4.7-flash", false),
+                        ).forEach { (label, slug, free) ->
+                            Surface(
+                                color = BgDark,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable {
+                                    // Endpoint AND model together. Setting only the id was the
+                                    // original bug: a z-ai model left pointing at NIM's base URL
+                                    // is what produced the 404 on every build.
+                                    vm.updateSettings {
+                                        it.withProvider(
+                                            role,
+                                            it.provider(role).copy(baseUrl = OPENROUTER_BASE_URL, model = slug),
+                                        )
+                                    }
+                                },
+                            ) {
+                                Text(
+                                    label,
+                                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (free) Success else Accent,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
                         "Or use real Claude via OpenRouter — needs your own OpenRouter key with credits, " +
                             "never free (verified live: Opus 5 is \$5/\$25 per 1M tokens there, not \$0).",
                         style = MaterialTheme.typography.labelSmall,

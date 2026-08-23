@@ -117,8 +117,12 @@ fun defaultModelFor(role: RoleKey): String = when (role) {
     // visually generic front-end code. moonshotai/kimi-k3 is genuinely available on NIM (verified
     // against its live /models catalog), so the coder is now actually the model it claims to be.
     RoleKey.KIMI -> "moonshotai/kimi-k3"
-    // There is no GLM on NIM at all — the whole catalog was pulled and searched, and z-ai/glm-5.3
-    // matched nothing, which is why the auditor answered a flat HTTP 404 on every build.
+    // GLM used to live here and no longer does: NIM answers HTTP 410 "end of life 2026-08-21" for
+    // z-ai/glm-5.2, and glm-5.3 was never a NIM model at all (a bad guess at a successor, which is
+    // what produced the 404 on every build). GLM itself is fine — it is on OpenRouter, where
+    // glm-5.2:free costs $0 — but that is a different endpoint and key, so it cannot be the
+    // default for a NIM-keyed app. Settings > Auditor has one-tap GLM presets for anyone who
+    // wants it. This default has to work with the key the user already has.
     // step-3.7-flash was picked by actually running the audit task against every plausible
     // candidate: given a file with four planted bugs it found 4/4 on six consecutive runs in
     // 4-7s, with clean JSON and no false-positive padding. minimax-m3 matched it for quality but
