@@ -243,6 +243,15 @@ fun runPipeline(
             emit(PipelineEvent.Step("LITE tier — skipping audit and safety passes for speed.", done = true))
         }
 
+        // The design system is the app's, not the model's — see WebScaffold.kt. Injected here so
+        // a web project is styled by a known-good stylesheet even if the model skipped the link.
+        val scaffolded = withWebScaffold(files)
+        if (scaffolded != files) {
+            files = scaffolded
+            emit(PipelineEvent.Files(files))
+            emit(PipelineEvent.Step("Applied the ChomuGiri design system.", done = true))
+        }
+
         try {
             val withImages = resolveImageMarkers(files, settings) { msg -> emit(PipelineEvent.Step(msg)) }
             if (withImages != files) {
