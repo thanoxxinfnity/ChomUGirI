@@ -7,6 +7,7 @@ import com.chomugiri.app.core.*
 import com.chomugiri.app.net.LlmClient
 import com.chomugiri.app.net.TerminalClient
 import com.chomugiri.app.net.VercelClient
+import com.chomugiri.app.service.BuildService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +43,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val jobs = mutableMapOf<String, Job>()
     private val _busyConversations = MutableStateFlow<Set<String>>(emptySet())
     val busyConversations: StateFlow<Set<String>> = _busyConversations.asStateFlow()
+
+    /**
+     * Every mutation of `jobs` goes through here, so the foreground service is started exactly
+     * while work is in flight and stopped the moment the last job ends. Android throttles a
+     * backgrounded app's network and can kill the process outright, which is what was silently
+     * killing runs when you left the app mid-build.
+     */
+    private fun syncBusy(status: String? = null) {
+        _busyConversations.value = jobs.keys.toSet()
+        if (jobs.isEmpty()) BuildService.stop(getApplication())
+        else BuildService.start(getApplication(), status ?: "Working...")
+    }
 
     /** Live output of the terminal build agent. Capped so a long run can't grow this unbounded. */
     private val _agentLog = MutableStateFlow("")
@@ -80,9 +93,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             var first = true
             store.conversations.collect { list ->
                 if (first) {
-                    _conversations.value = list
+                    // Nothing can still be streaming at startup — no job survives a process
+                    // death. Without this, a run Android killed in the background left its
+                    // message spinning "Thinking..." forever, with no way to retry it.
+                    _conversations.value = list.map { c ->
+                        if (c.messages.none { it.streaming }) c
+                        else c.copy(messages = c.messages.map { m ->
+                            if (!m.streaming) m else m.copy(
+                                streaming = false,
+                                error = m.error ?: "Interrupted — Android stopped this run while the app was in the background. Send it again.",
+                            )
+                        })
+                    }
                     if (_activeConversationId.value == null) {
-                        _activeConversationId.value = list.maxByOrNull { it.updatedAt }?.id
+                        _activeConversationId.value = _conversations.value.maxByOrNull { it.updatedAt }?.id
                     }
                     first = false
                 }
@@ -147,7 +171,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // can no longer see and holding it in busyConversations forever.
         jobs[id]?.cancel()
         jobs.remove(id)
-        _busyConversations.value = jobs.keys.toSet()
+        syncBusy()
         _conversations.value = _conversations.value.filterNot { it.id == id }
         if (_activeConversationId.value == id) {
             _activeConversationId.value = _conversations.value.maxByOrNull { it.updatedAt }?.id
@@ -284,12 +308,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 updateMessage(convId, assistantId) { it.copy(streaming = false) }
                 jobs.remove(convId)
-                _busyConversations.value = jobs.keys.toSet()
+                syncBusy()
                 persistConversations()
             }
         }
         jobs[convId] = job
-        _busyConversations.value = jobs.keys.toSet()
+        syncBusy("Starting...")
     }
 
     /** Stops the given conversation's job, or the active one if none is given. */
@@ -297,7 +321,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val id = convId ?: _activeConversationId.value ?: return
         jobs[id]?.cancel()
         jobs.remove(id)
-        _busyConversations.value = jobs.keys.toSet()
+        syncBusy()
     }
 
     private suspend fun runFastChat(
@@ -333,6 +357,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         flow.collect { ev ->
             when (ev) {
                 is PipelineEvent.Step -> {
+                    // Keeps the shade useful while you are in another app: the notification
+                    // tracks the actual stage rather than a static "Working...".
+                    if (jobs.isNotEmpty()) BuildService.start(getApplication(), ev.text)
                     if (ev.done && steps.isNotEmpty() && !steps.last().done) {
                         steps[steps.lastIndex] = steps.last().copy(text = ev.text, done = true)
                     } else {
