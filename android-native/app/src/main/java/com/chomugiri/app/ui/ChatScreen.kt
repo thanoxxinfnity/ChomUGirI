@@ -215,11 +215,22 @@ private fun MessageRow(
                                         Modifier.hairline(bubbleShape)
                                     },
                                 ) {
-                                    Text(
-                                        part.text.trim(),
-                                        Modifier.padding(horizontal = 15.dp, vertical = 11.dp),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                    )
+                                    // The user's own message is shown exactly as typed — running
+                                    // their text through a markdown parser would silently eat
+                                    // their asterisks and underscores. Only the assistant's reply,
+                                    // which is genuinely written in markdown, gets rendered.
+                                    if (isUser) {
+                                        Text(
+                                            part.text.trim(),
+                                            Modifier.padding(horizontal = 15.dp, vertical = 11.dp),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                    } else {
+                                        MarkdownView(
+                                            part.text.trim(),
+                                            Modifier.padding(horizontal = 15.dp, vertical = 11.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
