@@ -121,6 +121,13 @@ object TerminalClient {
     /** The literal split by `""` so the PTY's echo can never match the real completion line. */
     private const val ECHO_GUARD = "__CHOMU\"\"_END_"
 
+    /**
+     * Longest an end marker can be: "__CHOMU_END_" + a counter + "_" + an exit code + "__".
+     * feedCaptures() overlaps its tail scan by this much so a marker split across two WebSocket
+     * frames is still found.
+     */
+    private const val MARKER_MAX_LEN = 64
+
     private class Capture(
         val marker: Regex,
         val sb: StringBuilder,
@@ -259,8 +266,16 @@ object TerminalClient {
         synchronized(captures) {
             val finished = mutableListOf<Capture>()
             for (c in captures) {
+                val before = c.sb.length
                 c.sb.append(text)
-                val m = c.marker.find(c.sb)
+                // Only rescan the tail, not the whole buffer. The end marker is always at the very
+                // end of the output, but find() started from index 0 on every single frame — so a
+                // command producing N bytes across many frames cost O(N^2) regex work. A gradle
+                // build's log, or a base64 file transfer, is exactly big enough for that to become
+                // the bottleneck rather than the network. Overlap by the longest possible marker so
+                // one split across two frames is still matched.
+                val from = (before - MARKER_MAX_LEN).coerceAtLeast(0)
+                val m = c.marker.find(c.sb, from)
                 if (m != null) {
                     val body = c.sb.substring(0, m.range.first)
                     val code = m.groupValues[1].toIntOrNull() ?: -1

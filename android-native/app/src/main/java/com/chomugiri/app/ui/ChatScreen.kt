@@ -29,6 +29,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AttachFile
@@ -298,6 +300,11 @@ private fun MessageRow(
             }
         }
 
+        msg.attachment?.let { file ->
+            Spacer(Modifier.height(8.dp))
+            AttachedFileRow(file)
+        }
+
         msg.artifactId?.let { id ->
             val art = artifacts.firstOrNull { it.id == id }
             if (art != null) {
@@ -430,6 +437,108 @@ private fun ArtifactCard(artifact: Artifact, onOpen: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = FgMuted,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * A real finished file the assistant is handing over — today, an APK it just built on the user's
+ * own machine and pulled back. Tapping installs it; the share button saves it anywhere.
+ *
+ * The cache directory Android hands us can be cleared by the system at any time, so the row
+ * checks the file still exists rather than assuming a path recorded days ago is still valid — a
+ * tap that opens an installer for a file that is gone is the worst version of this.
+ */
+@Composable
+private fun AttachedFileRow(file: com.chomugiri.app.core.MessageFile) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val haptics = rememberHaptics()
+    val present = remember(file.path) { file.exists() }
+    val shape = RoundedCornerShape(16.dp)
+
+    fun uri(): android.net.Uri = androidx.core.content.FileProvider.getUriForFile(
+        context, "${context.packageName}.fileprovider", java.io.File(file.path),
+    )
+
+    fun open() {
+        if (!present) return
+        haptics.commit()
+        try {
+            val i = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri(), "application/vnd.android.package-archive")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(i)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // No installer, or install-from-unknown-sources blocked. Sharing still works, and is
+            // the honest fallback — never fail silently on a tap the user clearly meant.
+            android.widget.Toast.makeText(
+                context,
+                "Couldn't open the installer. Use the share button to save the APK instead.",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    fun share() {
+        haptics.tap()
+        try {
+            val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "application/vnd.android.package-archive"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri())
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(android.content.Intent.createChooser(i, "Save or send the APK"))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(context, "Nothing on this phone can take that file.", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Surface(
+        color = BgElevated,
+        shape = shape,
+        modifier = Modifier
+            .widthIn(max = 560.dp)
+            .then(if (present) Modifier.hairlineAccent(shape, alpha = 0.5f) else Modifier.hairline(shape))
+            .clickable(enabled = present) { open() },
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                color = if (present) Accent.copy(alpha = 0.16f) else BgElevated2,
+                shape = RoundedCornerShape(11.dp),
+            ) {
+                Icon(
+                    Icons.Default.Android,
+                    null,
+                    tint = if (present) Accent else FgMuted,
+                    modifier = Modifier.padding(8.dp).size(21.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    file.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = FgPrimary,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (present) "${file.prettySize()} · tap to install" else "No longer on this phone",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (present) FgMuted else Danger,
+                )
+            }
+            if (present) {
+                IconButton(onClick = { share() }, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Default.IosShare, "Save the APK", tint = FgMuted, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }

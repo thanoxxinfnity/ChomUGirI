@@ -335,7 +335,31 @@ data class Message(
     val error: String? = null,
     /** Which model actually produced this reply — "Fast Chat", a forced role's label, or "Deep Research". */
     val modelUsed: String? = null,
+    /** A real file on this device that this message is offering — currently a built APK. */
+    val attachment: MessageFile? = null,
 )
+
+/**
+ * A finished file sitting in the app's own storage, ready to be opened or shared. Held by path
+ * rather than by bytes so a 20MB APK never goes near the conversation JSON; [exists] is what the
+ * UI checks, since the cache directory can be cleared by Android at any time.
+ */
+@Serializable
+data class MessageFile(
+    val path: String,
+    val name: String,
+    val sizeBytes: Long,
+    /** "apk" today. Kept explicit so the row can say the right thing for other kinds later. */
+    val kind: String = "apk",
+) {
+    fun exists(): Boolean = java.io.File(path).let { it.isFile && it.length() > 0 }
+
+    fun prettySize(): String = when {
+        sizeBytes >= 1024 * 1024 -> "%.1f MB".format(sizeBytes / 1024.0 / 1024.0)
+        sizeBytes >= 1024 -> "${sizeBytes / 1024} KB"
+        else -> "$sizeBytes B"
+    }
+}
 
 @Serializable
 data class Conversation(

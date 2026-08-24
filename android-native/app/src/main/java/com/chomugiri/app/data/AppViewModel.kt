@@ -773,11 +773,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 if (requiresConfirmation) {
-                    val ok = askPermission("compile", "Compile an APK on your connected machine? This runs real build commands there.")
-                    if (!ok) {
-                        _agentLog.value = "Cancelled — compile was not confirmed."
-                        return@launch
-                    }
+                    // Stated once, not asked. Tapping "Build APK" already *is* the decision to
+                    // compile — putting a second yes/no in front of it added a step without adding
+                    // a choice, and the Stop button is a real way out at any point after this.
+                    appendAgentLog("Building on your connected machine — real commands run there. Stop anytime.")
                 }
                 if (!TerminalClient.connected.value) {
                     appendAgentLog("\n• Connecting to your terminal...")
@@ -803,6 +802,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         else -> Unit
                     }
                 }
+                // Only on the success path, and inside the try so a transfer failure is reported
+                // through the same handler as any other build failure.
+                if (succeeded) fetchBuiltApk(artifactId)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -819,6 +821,77 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+    }
+
+    /**
+     * Brings the APK the agent just built on the user's machine back onto the phone and offers it
+     * in chat as a real, tappable file.
+     *
+     * Without this the build "succeeded" and then went nowhere — the .apk sat on a remote machine
+     * with only its path printed in a log, which is not a deliverable. The transfer runs through
+     * the same terminal connection (see ApkFetch) and is checksum-verified, because a silently
+     * corrupted APK that installs and then misbehaves is worse than an honest failure.
+     *
+     * Every outcome is reported into the conversation. A build that produced no .apk, a transfer
+     * that failed, and a file that arrived intact are three different things the user needs to be
+     * able to tell apart.
+     */
+    private suspend fun fetchBuiltApk(artifactId: String?) {
+        val convId = artifactId?.let { findConversationIdForArtifact(it) } ?: _activeConversationId.value
+        val title = artifactId?.let { id -> _artifacts.value.firstOrNull { it.id == id }?.title } ?: "app"
+
+        fun say(text: String, file: MessageFile? = null) {
+            val id = convId ?: return
+            addMessage(id, Message(id = UUID.randomUUID().toString(), role = "assistant", content = text, attachment = file))
+            persistConversations()
+        }
+
+        appendAgentLog("\n\n• Looking for the built APK...")
+        val remote = ApkFetch.findApk("~/chomugiri-build")
+        if (remote == null) {
+            appendAgentLog(" none found.")
+            say("The build finished but no .apk turned up on your machine, so there is nothing to hand back. The build log above has what actually happened.")
+            return
+        }
+
+        appendAgentLog("\n• Pulling $remote back to your phone...")
+        val result = ApkFetch.pull(remote) { got, total ->
+            val pct = if (total > 0) (got * 100 / total).toInt() else 0
+            BuildService.start(getApplication(), "Downloading APK... $pct%")
+        }
+
+        when (result) {
+            is ApkFetch.Result.Failed -> {
+                appendAgentLog("\n[!] ${result.reason}")
+                say("The APK built fine, but bringing it back failed: ${result.reason}\n\nIt is still on your machine at $remote.")
+            }
+            is ApkFetch.Result.Ok -> {
+                val saved = try {
+                    saveApkToCache(title, result.bytes)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    appendAgentLog("\n[!] Couldn't save it: ${e.message}")
+                    say("The APK came back intact but couldn't be saved on this phone: ${e.message ?: "storage error"}")
+                    return
+                }
+                appendAgentLog("\n• Saved ${saved.prettySize()} to your phone.")
+                say("Your APK is ready — ${saved.prettySize()}. Tap it to install, or use the share button to save it anywhere.", saved)
+            }
+        }
+    }
+
+    /**
+     * Written into the cache dir's `share/` subfolder, which is the one path file_paths.xml
+     * exposes through FileProvider — anywhere else and the install/share intent gets no permission
+     * to read it back.
+     */
+    private fun saveApkToCache(title: String, bytes: ByteArray): MessageFile {
+        val dir = java.io.File(getApplication<Application>().cacheDir, "share").apply { mkdirs() }
+        val safe = title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(40).ifBlank { "app" }
+        val file = java.io.File(dir, "$safe-${System.currentTimeMillis()}.apk")
+        file.writeBytes(bytes)
+        return MessageFile(path = file.absolutePath, name = file.name, sizeBytes = file.length(), kind = "apk")
     }
 
     fun buildApkFromArtifact(artifact: Artifact) = runAgent(

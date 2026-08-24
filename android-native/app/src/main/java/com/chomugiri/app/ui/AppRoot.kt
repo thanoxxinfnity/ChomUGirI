@@ -14,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Checklist
@@ -250,7 +249,6 @@ fun AppRoot(vm: AppViewModel) {
 @Composable
 private fun AgentPermissionDialog(req: com.chomugiri.app.data.AgentPermissionRequest) {
     val (icon, title, confirmLabel, cancelLabel) = when (req.kind) {
-        "compile" -> listOf(Icons.Default.Android, "Compile on your machine?", "Allow", "Deny")
         "plan" -> listOf(Icons.Default.Checklist, "Build this?", "Build it", "Cancel")
         else -> listOf(Icons.Default.Description, "Read a file?", "Allow", "Deny")
     }

@@ -163,6 +163,22 @@ fun runTerminalAgent(
                 return@flow
             }
 
+            // The command is typed into a real PTY, so an embedded newline is an Enter keypress:
+            // the shell would run the first fragment on its own and sit at a continuation prompt
+            // for the rest, and the end marker would land in the wrong place. Rather than mangling
+            // it silently, hand the problem back to the model — it gets another turn anyway, and a
+            // model that wanted a script can write it with && or a heredoc-free one-liner.
+            if (command.contains('\n')) {
+                emit(PipelineEvent.Step("[$step] rejected a multi-line command — asking for one line", done = true))
+                history += ChatTurn("assistant", raw)
+                history += ChatTurn(
+                    "user",
+                    "That command spans multiple lines, which this shell cannot accept. " +
+                        "Send exactly one single-line command (chain steps with && or ;).",
+                )
+                continue
+            }
+
             readTarget(command)?.let { path ->
                 emit(PipelineEvent.Step("Waiting for permission to read $path...", done = true))
                 if (!onConfirmRead(path)) {
