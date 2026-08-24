@@ -148,10 +148,17 @@ object LlmClient {
                 val retryIn: Long? = http.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         val errText = resp.body?.string().orEmpty()
-                        // A 404 from a chat endpoint almost never means "server missing" — it means
-                        // this endpoint has no such model. Saying that outright beats relaying the
-                        // provider's bare "404 page not found", which reads like the app is broken.
-                        if (resp.code == 404) {
+                        // NIM's own model routing turned out to be flaky, not just its capacity —
+                        // caught live: moonshotai/kimi-k3 answered 200/200/200/429/404/200 across
+                        // six calls a second apart, no change on our end between them. The tell is
+                        // the body: a model that genuinely doesn't exist there answers with real
+                        // text ("404 page not found" for one that was never real, a JSON `detail`
+                        // for one that was retired) — this transient case comes back with nothing
+                        // in the body at all. So an empty-body 404 is treated as noise to retry
+                        // through, same as a 429; only a 404 that actually says something is taken
+                        // as the model really not being there.
+                        val transientNotFound = resp.code == 404 && errText.isBlank()
+                        if (resp.code == 404 && !transientNotFound) {
                             throw LlmException(
                                 role,
                                 "$role: the model \"${cfg.model}\" doesn't exist on ${cfg.baseUrl.removePrefix("https://").substringBefore('/')}. " +
@@ -159,10 +166,10 @@ object LlmClient {
                             )
                         }
                         // Busy, not broken: back off and try again rather than killing the run.
-                        if (isRetryableStatus(resp.code) && !emittedAny && attempt < MAX_ATTEMPTS) {
+                        if ((isRetryableStatus(resp.code) || transientNotFound) && !emittedAny && attempt < MAX_ATTEMPTS) {
                             return@use retryDelayFor(resp, attempt)
                         }
-                        if (isRetryableStatus(resp.code)) {
+                        if (isRetryableStatus(resp.code) || transientNotFound) {
                             throw LlmException(
                                 role,
                                 "$role: the provider is overloaded right now (HTTP ${resp.code}) and " +
