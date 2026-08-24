@@ -242,9 +242,15 @@ val BUILD_MODES = listOf(
         description = "Four audits, lower temperature for more predictable code, and the reasoning model steps in if the coder and auditor deadlock.",
     ),
     BuildMode(
-        "ULTRA", audits = 6, maxTokens = 32_768, temperature = 0.10,
+        // Audits dropped 6 -> 3 after timing a real ULTRA run. Each round that finds something
+        // re-runs the coder, and the coder is the slow part: measured end to end on NIM, one
+        // build of a single-file Pomodoro app streamed 612 lines in 965s — about 5.6 tokens a
+        // second. Six rounds of that is potentially an hour of waiting on a phone, which is not
+        // a "power" setting, it is an abandoned build. Three still gives the auditor real chances
+        // while keeping the worst case somewhere a person will actually sit through.
+        "ULTRA", audits = 3, maxTokens = 32_768, temperature = 0.10,
         deepLogic = true, safetyNet = true,
-        description = "Everything on, at full token budget so big multi-file projects don't get cut short. Genuinely slow. Still not a guarantee of zero bugs — nothing is.",
+        description = "Everything on, full token budget so a big project doesn't get cut short. Expect 15+ minutes, sometimes far longer — the coder itself is slow, and every audit that finds something runs it again. Still no guarantee of zero bugs; nothing gives you that.",
     ),
 )
 
