@@ -32,7 +32,15 @@ object LlmClient {
         // going to, and burning 30s per try before a retry just makes a flaky network feel dead.
         // Recovery comes from retrying on a fresh connection (below), not from waiting longer.
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(300, TimeUnit.SECONDS)
+        // Governs the gap between successive bytes on the socket, not the whole call — a slow
+        // model keeps this alive by trickling tokens. It used to be 300s, which meant a provider
+        // that accepted the connection and then sent literally nothing (observed live on NIM
+        // during a Kimi K3 call — reproduced by a user report, not assumed) left the UI frozen on
+        // "reading your request..." for up to 5 minutes with zero feedback and zero retry attempt
+        // before finally erroring. 90s is still generous next to every real first-token latency
+        // seen from NIM/OpenRouter, and a genuine silence past it now becomes a SocketTimeoutException
+        // — retried automatically (see isRetryableNetworkError) instead of a single long dead wait.
+        .readTimeout(90, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
