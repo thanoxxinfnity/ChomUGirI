@@ -1,6 +1,7 @@
 package com.chomugiri.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -579,27 +580,53 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 }
             }
 
-            Section("Pipeline") {
-                val tierLabel = com.chomugiri.app.core.POWER_TIERS
-                    .firstOrNull { it.auditLoops == settings.maxAuditLoops }?.label
+            Section("Build mode") {
+                val active = settings.mode()
                 Text(
-                    "Audit rounds: ${settings.maxAuditLoops}${tierLabel?.let { " ($it)" } ?: ""}",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    "Same as the tier chips above the composer. Every round is a real model " +
-                        "call, so more rounds means a genuinely longer wait — 0 skips the audit " +
-                        "and safety passes entirely for raw speed.",
+                    "The same chips that sit above the composer. A mode is not just a number of " +
+                        "audit passes — it also sets how much room the coder gets to finish a " +
+                        "file, how deterministic its output is, and whether the reasoning model " +
+                        "and the final safety review run at all.",
                     style = MaterialTheme.typography.bodySmall,
                     color = FgMuted,
                 )
-                Slider(
-                    value = settings.maxAuditLoops.toFloat(),
-                    onValueChange = { v -> vm.updateSettings { it.copy(maxAuditLoops = v.toInt()) } },
-                    valueRange = 0f..7f,
-                    steps = 6,
-                    colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent),
-                )
+                Spacer(Modifier.height(10.dp))
+                com.chomugiri.app.core.BUILD_MODES.forEach { m ->
+                    val on = m.label == active.label
+                    Surface(
+                        color = if (on) Accent.copy(alpha = 0.14f) else BgDark,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .border(
+                                1.dp,
+                                if (on) Accent.copy(alpha = 0.6f) else BorderCol,
+                                RoundedCornerShape(12.dp),
+                            )
+                            .clickable { vm.updateSettings { it.copy(buildMode = m.label) } },
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(
+                                m.label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (on) Accent else FgPrimary,
+                            )
+                            Spacer(Modifier.height(3.dp))
+                            Text(m.description, style = MaterialTheme.typography.bodySmall, color = FgMuted)
+                            Spacer(Modifier.height(6.dp))
+                            // The actual numbers, so the difference between modes is checkable
+                            // rather than something you have to take on faith from the label.
+                            Text(
+                                "audits ${m.audits}  ·  tokens ${m.maxTokens}  ·  temp ${m.temperature}" +
+                                    (if (m.deepLogic) "  ·  deep logic" else "") +
+                                    (if (m.safetyNet) "  ·  safety net" else ""),
+                                style = MonoStyle,
+                                color = FgMuted,
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(24.dp))

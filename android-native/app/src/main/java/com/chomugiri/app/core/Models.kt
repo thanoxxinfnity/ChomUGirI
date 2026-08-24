@@ -52,7 +52,13 @@ const val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/op
 @Serializable
 data class AppSettings(
     val providers: Map<String, ProviderConfig> = defaultProviders(),
+    /**
+     * Legacy: the old audit-count dial. Kept only so an existing install can be migrated onto a
+     * BuildMode on first load; nothing reads it to drive a build any more.
+     */
     val maxAuditLoops: Int = 2,
+    /** Which BuildMode drives a build. Empty means "not migrated yet" (see migrated()). */
+    val buildMode: String = "",
     /**
      * ttyd behind a tunnel — the user's own, entered by them in Settings. Never pre-filled: a
      * value baked into a shared build would hand every installer a shell on that one machine.
@@ -106,6 +112,10 @@ data class AppSettings(
 
     fun withProvider(role: RoleKey, cfg: ProviderConfig): AppSettings =
         copy(providers = providers.toMutableMap().apply { put(role.name, cfg) })
+
+    /** The active mode, falling back to the old audit count for anyone not yet migrated. */
+    fun mode(): BuildMode =
+        BUILD_MODES.firstOrNull { it.label == buildMode } ?: modeForAuditLoops(maxAuditLoops)
 }
 
 fun defaultModelFor(role: RoleKey): String = when (role) {
@@ -163,34 +173,85 @@ private fun isNimUrl(url: String): Boolean =
  */
 fun AppSettings.migrated(): AppSettings {
     var changed = false
-    val fixed = providers.mapValues { (_, cfg) ->
+    // An install from before modes existed carries only an audit count; map it once so the chip
+    // row opens on something that matches what they had rather than jumping to the default.
+    var withMode = this
+    if (buildMode.isBlank()) {
+        withMode = copy(buildMode = modeForAuditLoops(maxAuditLoops).label)
+        changed = true
+    }
+    val fixed = withMode.providers.mapValues { (_, cfg) ->
         val to = DEAD_ON_NIM[cfg.model.trim()]
         if (to == null || !isNimUrl(cfg.baseUrl)) cfg
         else { changed = true; cfg.copy(model = to) }
     }
-    return if (changed) copy(providers = fixed) else this
+    return if (changed) withMode.copy(providers = fixed) else this
 }
 
 fun defaultProviders(): Map<String, ProviderConfig> =
     ROLE_ORDER.associate { it.name to ProviderConfig(model = defaultModelFor(it)) }
 
 /**
- * Quick-select tiers for the one real dial the swarm has: how many GLM audit rounds run, and
- * whether DeepSeek/Nemotron get invoked at all. Same models throughout every tier — nothing
- * about "AI power" actually changes, only how many passes it makes over the same code.
+ * What "more power" actually means for a build.
+ *
+ * The old tiers changed exactly one thing — how many times the auditor re-read the same code —
+ * while their names promised something much bigger. The deepest one's own description admitted
+ * it: "Same models as every other tier, just the most passes over the same code." Re-reading is
+ * a real lever but a weak one, and it hits diminishing returns fast; stacking eight names on it
+ * made the dial feel arbitrary because it was.
+ *
+ * A mode now moves every lever that genuinely affects output quality at once:
+ *
+ *  - `maxTokens` — the big one. At 8k the coder silently truncates a large file mid-function and
+ *    the audit then "fixes" a fragment. 32768 was verified live against the coder endpoint;
+ *    65536 was not, so it is not offered.
+ *  - `temperature` — lower is more deterministic, which is what you want for code, but too low
+ *    on the first pass makes a model repeat a bad idea instead of finding another approach.
+ *  - `audits` — the old dial, kept, but now one input among several.
+ *  - `deepLogic` — brings in the reasoning model when coder and auditor deadlock.
+ *  - `safetyNet` — a final independent review pass before anything ships.
+ *
+ * No mode promises bug-free output, and none of these names will. A model that writes code that
+ * always compiles and never has a defect does not exist; claiming otherwise in a tier label just
+ * moves the disappointment later.
  */
-data class PowerTier(val label: String, val auditLoops: Int, val description: String)
-
-val POWER_TIERS = listOf(
-    PowerTier("LITE", 0, "Kimi writes the code once. No audit, no fallback, no safety check — fastest, for a quick throwaway script."),
-    PowerTier("ECONOMY", 1, "Kimi writes, GLM audits once and Kimi fixes what it finds, then Nemotron does a final safety pass."),
-    PowerTier("POWER", 2, "The default: 2 audit rounds between Kimi and GLM before Nemotron's safety pass. Good balance of speed and quality."),
-    PowerTier("EXTRA", 3, "3 audit rounds — more chances for GLM to catch something Kimi missed, at the cost of more time."),
-    PowerTier("MAX", 4, "4 audit rounds. Meaningfully slower; worth it for something you actually want to ship as-is."),
-    PowerTier("ULTRAMAX", 5, "5 audit rounds — thorough, and a genuinely long wait since every round is a real model call."),
-    PowerTier("GOJO", 6, "6 audit rounds. At this depth you're mostly paying for diminishing returns, but it's here if you want it."),
-    PowerTier("SUKUNA", 7, "7 audit rounds — the deepest this app goes. Same models as every other tier, just the most passes over the same code."),
+data class BuildMode(
+    val label: String,
+    val audits: Int,
+    val maxTokens: Int,
+    val temperature: Double,
+    val deepLogic: Boolean,
+    val safetyNet: Boolean,
+    val description: String,
 )
+
+val BUILD_MODES = listOf(
+    BuildMode(
+        "FAST", audits = 0, maxTokens = 8_192, temperature = 0.45,
+        deepLogic = false, safetyNet = false,
+        description = "One pass, nothing checks it. Seconds, not minutes — for a throwaway script or a quick look at an idea.",
+    ),
+    BuildMode(
+        "BALANCED", audits = 2, maxTokens = 12_288, temperature = 0.30,
+        deepLogic = false, safetyNet = true,
+        description = "The default. Two audit rounds plus a final safety review, and enough token room that a normal-sized file finishes properly.",
+    ),
+    BuildMode(
+        "DEEP", audits = 4, maxTokens = 20_480, temperature = 0.20,
+        deepLogic = true, safetyNet = true,
+        description = "Four audits, lower temperature for more predictable code, and the reasoning model steps in if the coder and auditor deadlock.",
+    ),
+    BuildMode(
+        "ULTRA", audits = 6, maxTokens = 32_768, temperature = 0.10,
+        deepLogic = true, safetyNet = true,
+        description = "Everything on, at full token budget so big multi-file projects don't get cut short. Genuinely slow. Still not a guarantee of zero bugs — nothing is.",
+    ),
+)
+
+/** Old saved settings stored an audit count; map it onto the nearest mode. */
+fun modeForAuditLoops(n: Int): BuildMode =
+    BUILD_MODES.minByOrNull { kotlin.math.abs(it.audits - n) } ?: BUILD_MODES[1]
+
 
 @Serializable
 data class ChatTurn(val role: String, val content: String)

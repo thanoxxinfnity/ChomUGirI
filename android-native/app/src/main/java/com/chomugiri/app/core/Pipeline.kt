@@ -137,7 +137,9 @@ fun runPipeline(
 ): Flow<PipelineEvent> = flow {
     var files: List<GeneratedFile> = emptyList()
     // 0 means the LITE tier: Kimi's raw output only, no audit/fallback/safety pass at all.
-    val maxLoops = settings.maxAuditLoops.coerceIn(0, 8)
+    // One mode drives every knob below, instead of a lone audit counter.
+    val mode = settings.mode()
+    val maxLoops = mode.audits.coerceIn(0, 8)
 
     try {
         val coderCfg = settings.provider(RoleKey.KIMI)
@@ -151,7 +153,7 @@ fun runPipeline(
         LlmClient.stream(
             coderCfg, coder,
             listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", prompt),
-            maxTokens = 8192,
+            temperature = mode.temperature, maxTokens = mode.maxTokens,
         ).collect { chunk ->
             kimiBuf.append(chunk)
             progress.feed(chunk).forEach { emit(PipelineEvent.Step(it, done = true)) }
@@ -228,7 +230,7 @@ fun runPipeline(
                             "Current files:\n${filesToPromptBlock(files)}\n\nIssues to fix:\n${issuesToText(lastIssues)}",
                         ),
                     ),
-                    maxTokens = 8192,
+                    maxTokens = mode.maxTokens,
                 )
             } catch (e: Exception) {
                 emit(PipelineEvent.Step("$coder's fix call failed: ${e.message ?: "unknown error"} — keeping the last working version.", done = true))
@@ -242,8 +244,10 @@ fun runPipeline(
             emit(PipelineEvent.Step("Fix applied.", done = true))
         }
 
-        if (!clean && lastIssues.isNotEmpty()) {
-            emit(PipelineEvent.Step("Kimi/GLM got stuck — DeepSeek R1 is reasoning through the bug..."))
+        // Only the deeper modes pay for the reasoning fallback; on FAST/BALANCED a deadlock ships
+        // the auditor's last version rather than adding another slow call the user didn't ask for.
+        if (mode.deepLogic && !clean && lastIssues.isNotEmpty()) {
+            emit(PipelineEvent.Step("$coder and the auditor are stuck — DeepSeek R1 is reasoning through it..."))
             try {
                 val deepOut = LlmClient.complete(
                     settings.provider(RoleKey.DEEPSEEK), "DeepSeek R1",
@@ -254,7 +258,7 @@ fun runPipeline(
                             "Files:\n${filesToPromptBlock(files)}\n\nUnresolved issues after $maxLoops audit rounds:\n${issuesToText(lastIssues)}",
                         ),
                     ),
-                    temperature = 0.2, maxTokens = 8192,
+                    temperature = mode.temperature, maxTokens = mode.maxTokens,
                 )
                 val deepFixed = parseFileBlocks(deepOut)
                 if (deepFixed.isNotEmpty()) {
@@ -268,13 +272,13 @@ fun runPipeline(
             }
         }
 
-        if (maxLoops > 0) {
+        if (mode.safetyNet) {
             emit(PipelineEvent.Step("Nemotron 3 Ultra running the final safety check..."))
             try {
                 val nemoOut = LlmClient.complete(
                     settings.provider(RoleKey.NEMOTRON), "Nemotron 3 Ultra 550B",
                     listOf(ChatTurn("system", NEMOTRON_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
-                    temperature = 0.1, jsonMode = true, maxTokens = 8192,
+                    temperature = 0.1, jsonMode = true, maxTokens = mode.maxTokens,
                 )
                 val safety = extractJsonObject(nemoOut)
                 val fixedArr = safety?.optJSONArray("fixedFiles")

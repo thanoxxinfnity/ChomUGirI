@@ -137,8 +137,8 @@ fun ChatScreen(
             onStop = { activeId?.let { vm.stop(it) } },
             latestArtifact = artifacts.maxByOrNull { it.createdAt },
             onOpenCanvas = onOpenArtifact,
-            auditLoops = settings.maxAuditLoops,
-            onAuditLoopsChange = { n -> vm.updateSettings { it.copy(maxAuditLoops = n) } },
+            buildMode = settings.mode().label,
+            onModeChange = { label -> vm.updateSettings { it.copy(buildMode = label) } },
             onSendWithRole = { t, role -> vm.send(t, forcedRole = role) },
             customModels = settings.customModels,
             onSendWithCustomModel = { t, id -> vm.send(t, forcedCustomModelId = id) },
@@ -899,8 +899,8 @@ private fun Composer(
     onStop: () -> Unit,
     latestArtifact: Artifact? = null,
     onOpenCanvas: (String) -> Unit = {},
-    auditLoops: Int = 2,
-    onAuditLoopsChange: (Int) -> Unit = {},
+    buildMode: String = "BALANCED",
+    onModeChange: (String) -> Unit = {},
     onSendWithRole: (String, com.chomugiri.app.core.RoleKey) -> Unit = { _, _ -> },
     customModels: List<com.chomugiri.app.core.CustomModel> = emptyList(),
     onSendWithCustomModel: (String, String) -> Unit = { _, _ -> },
@@ -965,8 +965,8 @@ private fun Composer(
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                com.chomugiri.app.core.POWER_TIERS.forEach { tier ->
-                    val selected = tier.auditLoops == auditLoops
+                com.chomugiri.app.core.BUILD_MODES.forEach { m ->
+                    val selected = m.label == buildMode
                     Surface(
                         color = if (selected) Accent.copy(alpha = 0.22f) else BgElevated,
                         shape = RoundedCornerShape(14.dp),
@@ -976,10 +976,10 @@ private fun Composer(
                                 if (selected) Accent.copy(alpha = 0.7f) else BorderCol,
                                 RoundedCornerShape(14.dp),
                             )
-                            .clickable { haptics.select(); onAuditLoopsChange(tier.auditLoops) },
+                            .clickable { haptics.select(); onModeChange(m.label) },
                     ) {
                         Text(
-                            tier.label,
+                            m.label,
                             Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                             style = MonoStyle,
                             color = if (selected) FgPrimary else FgMuted,
@@ -988,9 +988,9 @@ private fun Composer(
                 }
             }
 
-            com.chomugiri.app.core.POWER_TIERS.firstOrNull { it.auditLoops == auditLoops }?.let { tier ->
+            com.chomugiri.app.core.BUILD_MODES.firstOrNull { it.label == buildMode }?.let { m ->
                 Text(
-                    tier.description,
+                    m.description,
                     Modifier.padding(horizontal = 12.dp).padding(bottom = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = FgMuted,
