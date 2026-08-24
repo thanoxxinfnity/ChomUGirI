@@ -174,6 +174,10 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     }) {
                         Text("Use free Pollinations model for this role — no key needed", color = Success, style = MaterialTheme.typography.labelSmall)
                     }
+                    // Was rendering under every role's section (Fast Chat, DeepSeek, Nemotron —
+                    // not just the auditor it is actually about) because nothing here checked
+                    // which role this iteration is for.
+                    if (role == RoleKey.GLM) {
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "GLM: NVIDIA retired it — glm-5.2 answers HTTP 410 \"end of life 2026-08-21\" " +
@@ -219,6 +223,57 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                             }
                         }
                     }
+                    }
+
+                    // Kimi K3 on NIM has proven quality (real end-to-end builds), but NIM itself
+                    // is flaky under load — measured live: 5 different NIM models each failed
+                    // 40-60% of a run of repeated identical calls (mixed 404/429/503), so switching
+                    // to another NIM model buys nothing. This is the same coder on a different
+                    // provider's infrastructure instead, for anyone who wants an alternative to
+                    // NIM specifically rather than a different model.
+                    if (role == RoleKey.KIMI) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Kimi on NIM works, but NIM's own routing is flaky under load — every " +
+                                "model tested there failed some of the time, not just this one. Same " +
+                                "coder, different infrastructure: OpenRouter's kimi-k2.7-code is a " +
+                                "coding-specialised build, cheaper than kimi-k3 there. Needs your own " +
+                                "OpenRouter key in the API key field above.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = FgMuted,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            listOf(
+                                "Kimi K2.7 Code" to "moonshotai/kimi-k2.7-code",
+                                "Kimi K3" to "moonshotai/kimi-k3",
+                            ).forEach { (label, slug) ->
+                                Surface(
+                                    color = BgDark,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.clickable {
+                                        vm.updateSettings {
+                                            it.withProvider(
+                                                role,
+                                                it.provider(role).copy(baseUrl = OPENROUTER_BASE_URL, model = slug),
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Text(
+                                        label,
+                                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Accent,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "Or use real Claude via OpenRouter — needs your own OpenRouter key with credits, " +
