@@ -232,46 +232,63 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
                     // provider's infrastructure instead, for anyone who wants an alternative to
                     // NIM specifically rather than a different model.
                     if (role == RoleKey.KIMI) {
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(10.dp))
                         Text(
-                            "Kimi on NIM works, but NIM's own routing is flaky under load — every " +
-                                "model tested there failed some of the time, not just this one. Same " +
-                                "coder, different infrastructure: OpenRouter's kimi-k2.7-code is a " +
-                                "coding-specialised build, cheaper than kimi-k3 there. Needs your own " +
-                                "OpenRouter key in the API key field above.",
+                            "WHERE THIS RUNS",
                             style = MaterialTheme.typography.labelSmall,
                             color = FgMuted,
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Row(
-                            Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            listOf(
-                                "Kimi K2.7 Code" to "moonshotai/kimi-k2.7-code",
-                                "Kimi K3" to "moonshotai/kimi-k3",
-                            ).forEach { (label, slug) ->
-                                Surface(
-                                    color = BgDark,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.clickable {
-                                        vm.updateSettings {
-                                            it.withProvider(
-                                                role,
-                                                it.provider(role).copy(baseUrl = OPENROUTER_BASE_URL, model = slug),
-                                            )
-                                        }
-                                    },
-                                ) {
-                                    Text(
-                                        label,
-                                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Accent,
-                                    )
-                                }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Same coder, three different machines behind it. NIM is what your nvapi- " +
+                                "key already reaches, but its routing genuinely wobbles under load — " +
+                                "the same model answering 200, then 404, then 429 seconds apart. When " +
+                                "that happens, the fix is different infrastructure, not waiting.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = FgMuted,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        CoderHomes { url, model ->
+                            vm.updateSettings {
+                                it.withProvider(role, it.provider(role).copy(baseUrl = url, model = model))
                             }
                         }
+
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            "BACKUP CODER",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = FgMuted,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Tried automatically if the one above fails mid-build, so a bad minute at " +
+                                "one provider doesn't kill the whole run. Pick a home, then paste that " +
+                                "provider's key below. Leave the key empty to switch the backup off.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = FgMuted,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        CoderHomes { url, model ->
+                            vm.updateSettings { it.copy(coderFallback = it.coderFallback.copy(baseUrl = url, model = model)) }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        val fb = settings.coderFallback
+                        Field(
+                            label = "Backup key",
+                            value = fb.apiKey,
+                            secret = true,
+                            onChange = { v ->
+                                vm.updateSettings { it.copy(coderFallback = it.coderFallback.copy(apiKey = v.trim())) }
+                            },
+                        )
+                        Text(
+                            if (settings.coderFallbackOrNull() != null)
+                                "Backup ready: ${fb.model} on ${fb.baseUrl.removePrefix("https://").substringBefore('/')}"
+                            else "No backup configured — a coder failure will end the build.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (settings.coderFallbackOrNull() != null) Success else FgMuted,
+                        )
                     }
 
                     Spacer(Modifier.height(6.dp))
@@ -910,4 +927,45 @@ private fun Field(
             unfocusedContainerColor = BgElevated2,
         ),
     )
+}
+
+/**
+ * The three places the coder can actually run, as one-tap presets.
+ *
+ * Every entry here was checked against the provider's own live catalogue rather than assumed:
+ * NIM and OpenRouter were already verified earlier, and Hugging Face's router reports
+ * moonshotai/Kimi-K3 served by five providers, all live. The cost line on each is deliberately
+ * blunt — "free" and "paid" are the difference between a build running and a build failing on a
+ * billing error, and only one of these is genuinely free.
+ */
+@Composable
+private fun CoderHomes(onPick: (baseUrl: String, model: String) -> Unit) {
+    data class Home(val label: String, val cost: String, val url: String, val model: String)
+    val homes = listOf(
+        Home("NVIDIA NIM", "your nvapi- key", NIM_BASE_URL, "moonshotai/kimi-k3"),
+        Home("OpenRouter", "paid, per token", OPENROUTER_BASE_URL, "moonshotai/kimi-k2.7-code"),
+        Home("Hugging Face", "free monthly credit", HF_ROUTER_BASE_URL, "moonshotai/Kimi-K3"),
+        // The one entry that is genuinely $0 with no credit to run down. It is not Kimi and does
+        // not pretend to be — it is here because a free backup that always answers is worth more
+        // than a better one that stops when the credit does.
+        Home("GLM 5.2 free", "genuinely \$0", OPENROUTER_BASE_URL, "z-ai/glm-5.2:free"),
+    )
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        homes.forEach { h ->
+            val shape = RoundedCornerShape(11.dp)
+            Surface(
+                color = BgDark,
+                shape = shape,
+                modifier = Modifier.hairline(shape).clickable { onPick(h.url, h.model) },
+            ) {
+                Column(Modifier.padding(horizontal = 11.dp, vertical = 7.dp)) {
+                    Text(h.label, style = MaterialTheme.typography.labelMedium, color = Accent)
+                    Text(h.cost, style = MaterialTheme.typography.labelSmall, color = FgMuted)
+                }
+            }
+        }
+    }
 }

@@ -190,13 +190,13 @@ fun runPipeline(
             }
         }
 
-        val coderCfg = settings.provider(RoleKey.KIMI)
-        val coder = modelLabel(coderCfg, "The coder")
+        var coderCfg = settings.provider(RoleKey.KIMI)
+        var coder = modelLabel(coderCfg, "The coder")
         emit(PipelineEvent.Step("$coder is reading your request..."))
 
         // Streamed, not buffered: every reasoning line and every file the model announces shows
         // up in the bubble as it happens, instead of one frozen step for the whole generation.
-        val progress = CoderStreamProgress()
+        var progress = CoderStreamProgress()
         val kimiBuf = StringBuilder()
         // Gives the coder the real content of what it already built, not just a "Done — N files"
         // summary from chat history — without this it has zero visibility into the existing
@@ -205,13 +205,39 @@ fun runPipeline(
             "### EXISTING PROJECT FILES (edit these — do not re-emit a file you are not changing)\n" +
                 filesToPromptBlock(existingFiles) + "\n\n### USER REQUEST\n" + prompt
         } else prompt
-        LlmClient.stream(
-            coderCfg, coder,
-            listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", userTurn),
-            temperature = mode.temperature, maxTokens = mode.maxTokens,
-        ).collect { chunk ->
-            kimiBuf.append(chunk)
-            progress.feed(chunk).forEach { emit(PipelineEvent.Step(it, done = true)) }
+        val coderTurns = listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", userTurn)
+        suspend fun runCoder() {
+            LlmClient.stream(
+                coderCfg, coder, coderTurns,
+                temperature = mode.temperature, maxTokens = mode.maxTokens,
+            ).collect { chunk ->
+                kimiBuf.append(chunk)
+                progress.feed(chunk).forEach { emit(PipelineEvent.Step(it, done = true)) }
+            }
+        }
+        try {
+            runCoder()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The coder is the one role a build cannot continue without, and its usual failure is
+            // the provider having a bad minute rather than anything wrong with the request — NIM
+            // has been observed answering 200/404/429 for the same model seconds apart. Retrying on
+            // genuinely different infrastructure is the only thing that actually helps, so a
+            // configured backup gets one full attempt before the run is declared dead.
+            val backup = settings.coderFallbackOrNull() ?: throw e
+            // Whatever the primary managed to emit before dying is discarded rather than kept.
+            // A response cut off mid-file is not partial progress worth salvaging: the file-block
+            // parser needs a closing fence, so a truncated tail either vanishes silently or lands
+            // as a half-written file in the project. Starting the backup from a clean buffer is
+            // the only way the result is a whole answer. The progress tracker is rebuilt with it,
+            // since its cursor indexes the buffer it was reading.
+            kimiBuf.setLength(0)
+            progress = CoderStreamProgress()
+            coderCfg = backup
+            coder = modelLabel(backup, "Backup coder")
+            emit(PipelineEvent.Step("Primary coder failed (${e.message?.take(90) ?: "error"}) — retrying on $coder...", done = true))
+            runCoder()
         }
         val rawKimiOut = kimiBuf.toString()
         // Thinking lines already streamed above; this only strips the block from the text.

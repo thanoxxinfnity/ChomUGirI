@@ -118,6 +118,40 @@ what to switch on, not a system error. No bullet points, no headers, no apology 
 The user's message was:
 %s"""
 
+/**
+ * Turns a finished build into an actual explanation instead of a receipt.
+ *
+ * The old completion line was "Done — N file(s) ready. Open the project to view, export, or build
+ * it." — accurate and useless. It tells you nothing about what was made, and it lands in English
+ * no matter what language the whole conversation happened in. This is one cheap call over the real
+ * file list, so what is described is genuinely what got written.
+ */
+/** The line the summary model must print before its real answer. */
+const val SUMMARY_MARKER = "<<<SUMMARY>>>"
+
+const val BUILD_SUMMARY_PROMPT = """You just finished building something for the user. Explain what you made, briefly.
+
+Think as long as you need, then output your final answer on its own, after a line containing
+exactly <<<SUMMARY>>> and nothing else. Everything before that marker is discarded.
+
+The answer itself: 3 to 5 short plain lines, under 90 words. Cover what the app or site actually
+is, its main screens or pages, and one or two real things it can do. Mention a technical choice
+only if there is one worth knowing. End with a short clause on what they can do next (open it,
+edit it, install it).
+
+Rules for the answer:
+- Describe only what is actually in the file list below. Never invent a feature that isn't there.
+- No markdown headers, no bullet symbols, no bold. Plain short lines.
+- Do not list the filenames back — the user can already see them.
+- Reply in exactly the language and style the user wrote in (Hinglish stays Hinglish, Hindi stays
+  Hindi, English stays English). This is you telling a friend what you just built.
+
+What the user asked for:
+%s
+
+Files that were actually written:
+%s"""
+
 const val KIMI_SYSTEM_PROMPT = """You are Kimi K3, the main coder in ChomuGiri's AI swarm — a next-gen agentic web/app builder,
 not just an autocomplete. You read the user's request and write the complete, working source
 code for it — every file the project needs, fully implemented, no incomplete code, no TODOs, no

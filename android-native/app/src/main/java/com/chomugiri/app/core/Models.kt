@@ -39,6 +39,15 @@ const val NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 /**
+ * Hugging Face's Inference Providers router — OpenAI-compatible, and a third home for the coder
+ * when NIM is having one of its routing wobbles. Verified against the live catalogue: it serves
+ * moonshotai/Kimi-K3 across five providers (together, fireworks, featherless, baseten, deepinfra),
+ * all reporting live. It is billed against a free account's monthly credit rather than being
+ * unlimited, so it is offered as an alternative, not as "free forever".
+ */
+const val HF_ROUTER_BASE_URL = "https://router.huggingface.co/v1"
+
+/**
  * Gemini speaks OpenAI's chat/completions shape at this path, so it works as an ordinary chat or
  * coding provider through the existing client with no special-casing — verified live: the
  * endpoint answers "Please pass a valid API key" rather than 404.
@@ -104,6 +113,15 @@ data class AppSettings(
     val singleModelMode: Boolean = false,
     /** User-defined models with their own endpoint, alongside the five fixed pipeline roles. */
     val customModels: List<CustomModel> = emptyList(),
+    /**
+     * A second home for the coder, tried automatically when the first one fails.
+     *
+     * The coder is the one role a build cannot proceed without, and NIM's routing has been
+     * observed answering 200/404/429 for the same model seconds apart. One flaky minute killing a
+     * whole run is the single most common way this app wastes someone's time, and a backup on
+     * genuinely different infrastructure is the only real fix. Blank means no fallback configured.
+     */
+    val coderFallback: ProviderConfig = ProviderConfig(baseUrl = "", model = ""),
 ) {
     fun provider(role: RoleKey): ProviderConfig {
         val effective = if (singleModelMode) RoleKey.KIMI else role
@@ -112,6 +130,10 @@ data class AppSettings(
 
     fun withProvider(role: RoleKey, cfg: ProviderConfig): AppSettings =
         copy(providers = providers.toMutableMap().apply { put(role.name, cfg) })
+
+    /** The configured coder backup, or null when there isn't a usable one. */
+    fun coderFallbackOrNull(): ProviderConfig? = coderFallback
+        .takeIf { it.model.isNotBlank() && it.baseUrl.isNotBlank() && it.apiKey.isNotBlank() }
 
     /** The active mode, falling back to the old audit count for anyone not yet migrated. */
     fun mode(): BuildMode =

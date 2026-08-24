@@ -529,9 +529,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // Flush whatever the throttle held back before deciding what to show.
                     if (body.isNotEmpty()) updateMessage(convId, msgId) { it.copy(content = body.toString()) }
                     if (body.isEmpty() && ev.files.isNotEmpty()) {
+                        // Something readable immediately, so the bubble is never blank while the
+                        // real summary is still being written.
                         updateMessage(convId, msgId) {
-                            it.copy(content = "Done — ${ev.files.size} file(s) ready. Open the project to view, export, or build it.")
+                            it.copy(content = "Done — ${ev.files.size} file(s) ready.")
                         }
+                        summariseBuild(convId, msgId, prompt, ev.files)
                     }
                     artifactId?.let { id ->
                         val elapsed = System.currentTimeMillis() - startedAt
@@ -915,6 +918,47 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val file = java.io.File(dir, "$safe-${System.currentTimeMillis()}.apk")
         file.writeBytes(bytes)
         return MessageFile(path = file.absolutePath, name = file.name, sizeBytes = file.length(), kind = "apk")
+    }
+
+    /**
+     * Replaces the bare "N file(s) ready" line with a real description of what was built.
+     *
+     * A file count is a receipt, not an answer — it says nothing about what the thing does, and it
+     * arrives in English regardless of the language the whole conversation happened in. The
+     * summary is generated from the real file list, so it can only describe what was actually
+     * written. It is a nicety, never a blocker: if the call fails, the count line already showing
+     * stays exactly as it is.
+     */
+    private suspend fun summariseBuild(
+        convId: String, msgId: String, prompt: String, files: List<GeneratedFile>,
+    ) {
+        val manifest = files.joinToString("\n") { f ->
+            "- ${f.path} (${f.content.lines().size} lines)"
+        }.take(4000)
+        val raw = try {
+            LlmClient.complete(
+                _settings.value.provider(RoleKey.FAST), "Summary",
+                listOf(ChatTurn("user", BUILD_SUMMARY_PROMPT.format(prompt.take(500), manifest))),
+                // Budget covers the scratchpad as well as the answer: the FAST default is a
+                // reasoning model, and starving it mid-thought was what truncated the summary
+                // before the real answer ever appeared.
+                temperature = 0.4, maxTokens = 1400,
+            ).trim()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return
+        }
+        // The FAST default leaks its chain-of-thought into content rather than the separate
+        // reasoning_content field — measured, not assumed: asked for this summary in Hinglish it
+        // returned 406 words of visible deliberation and never reached an answer. Telling it to
+        // think freely and then mark the answer fixes that at the source (3/3 clean across
+        // Hinglish and English once the marker was added); everything before the marker is
+        // dropped here. A response with no marker at all is only trusted if it is already short.
+        val summary = raw.substringAfterLast(SUMMARY_MARKER, if (raw.length <= 600) raw else "").trim()
+        if (summary.isBlank() || summary.length > 900) return
+        updateMessage(convId, msgId) { it.copy(content = summary) }
+        persistConversations()
     }
 
     /**
