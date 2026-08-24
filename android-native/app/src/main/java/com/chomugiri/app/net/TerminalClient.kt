@@ -189,6 +189,8 @@ object TerminalClient {
                 .addHeader("ngrok-skip-browser-warning", "true")
                 .addHeader("User-Agent", "ChomuGirI-Terminal/1.2")
                 .build()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             val why = "That doesn't look like a valid URL: ${e.message ?: "malformed URL"}"
             _status.value = why
@@ -310,8 +312,14 @@ object TerminalClient {
         return try {
             withTimeout(timeoutMs) { deferred.await() }
         } catch (e: TimeoutCancellationException) {
-            synchronized(captures) { captures.remove(capture) }
             CommandResult(cleanOutput(capture.sb.toString()), -1, timedOut = true)
+        } finally {
+            // Must run on every exit path, not just the timeout one. When the caller's coroutine
+            // is cancelled (the user stops a build mid-command), the plain CancellationException
+            // propagates straight past a timeout-only catch and the capture stays registered
+            // forever — with every subsequent byte of terminal output still being appended to its
+            // StringBuilder. Over a long session that is an unbounded leak on a dead command.
+            synchronized(captures) { captures.remove(capture) }
         }
     }
 

@@ -26,6 +26,8 @@ fun readTextFile(context: Context, uri: Uri, maxBytes: Int): String? =
             val bad = text.count { it == '�' }
             if (text.isNotEmpty() && bad.toDouble() / text.length > 0.02) null else text
         }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         null
     }

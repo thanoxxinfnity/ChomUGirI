@@ -116,6 +116,8 @@ object NvidiaImageClient {
                 val text = resp.body?.string().orEmpty()
                 val json = try {
                     JSONObject(text)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     throw NvidiaImageException("NVIDIA image API returned an unexpected response (HTTP ${resp.code}): ${text.take(200)}")
                 }

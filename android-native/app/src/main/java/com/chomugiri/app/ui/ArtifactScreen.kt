@@ -75,6 +75,8 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
             val msg = try {
                 val n = writeArtifactZip(context, uri, artifact)
                 "Saved $n file(s) as .zip"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 "Export failed: ${e.message}"
             }
@@ -163,6 +165,8 @@ fun ArtifactScreen(vm: AppViewModel, artifact: Artifact, onClose: () -> Unit) {
                     onOpen = { url ->
                         try {
                             context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             Toast.makeText(context, "Couldn't open that link.", Toast.LENGTH_SHORT).show()
                         }
@@ -1149,6 +1153,8 @@ private fun shareArtifactZip(context: android.content.Context, artifact: Artifac
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(intent, "Share project"))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         Toast.makeText(context, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
     }

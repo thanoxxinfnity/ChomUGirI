@@ -84,6 +84,8 @@ suspend fun resolveImageMarkers(
         resolved[desc] = try {
             onProgress("Generating image: ${desc.take(60)}...")
             generateOne(desc, settings) ?: placeholderDataUri(desc)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             onProgress("Image generation failed: ${e.message ?: "unknown error"} — using a placeholder. (Settings > Image Generation > Test the key if this keeps happening.)")
             placeholderDataUri(desc)

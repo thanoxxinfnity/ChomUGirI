@@ -32,6 +32,8 @@ fun runVideoPipeline(prompt: String, settings: AppSettings): Flow<PipelineEvent>
         emit(PipelineEvent.Files(listOf(file)))
         emit(PipelineEvent.Step("Done — ${bytes.size / 1024} KB of video.", done = true))
         emit(PipelineEvent.Done(listOf(file), "Hugging Face (video)"))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         emit(PipelineEvent.Failed(e.message ?: "Couldn't generate the video."))
     }

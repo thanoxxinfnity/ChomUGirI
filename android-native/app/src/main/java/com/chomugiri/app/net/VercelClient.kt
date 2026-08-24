@@ -61,6 +61,8 @@ object VercelClient {
             val text = resp.body?.string().orEmpty()
             val json = try {
                 JSONObject(text)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 throw VercelException("Vercel returned an unexpected response (HTTP ${resp.code}).")
             }
@@ -104,6 +106,8 @@ object VercelClient {
                 .patch(body.toString().toRequestBody(JSON))
                 .build()
             http.newCall(req).execute().close()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Deliberately swallowed — see the doc comment above.
         }

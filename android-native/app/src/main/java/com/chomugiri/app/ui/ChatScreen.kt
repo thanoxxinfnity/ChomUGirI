@@ -1166,6 +1166,8 @@ private fun Composer(
                         }
                         try {
                             speechLauncher.launch(intent)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             // Covers no voice-input app (ActivityNotFoundException) and any other
                             // launch failure alike — this must never crash the composer.

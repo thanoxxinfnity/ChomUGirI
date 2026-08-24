@@ -64,6 +64,8 @@ fun runPptxPipeline(prompt: String, settings: AppSettings): Flow<PipelineEvent> 
                         val dataUri = GeminiClient.generateImageDataUri(settings.geminiApiKey, settings.geminiModel, s.imageDesc)
                         isJpeg = dataUri.startsWith("data:image/jpeg")
                         imgBytes = GeminiClient.decodeDataUri(dataUri)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         emit(PipelineEvent.Step("Slide ${i + 1} image failed: ${e.message ?: "unknown error"} — shipping that slide text-only.", done = true))
                     }
@@ -83,6 +85,8 @@ fun runPptxPipeline(prompt: String, settings: AppSettings): Flow<PipelineEvent> 
         emit(PipelineEvent.Files(listOf(file)))
         emit(PipelineEvent.Step("Done — ${slides.size} slide(s), ${slides.count { it.imageBytes != null }} with a real image.", done = true))
         emit(PipelineEvent.Done(listOf(file), "PPTX Generator"))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         emit(PipelineEvent.Failed(e.message ?: "Couldn't generate the presentation."))
     }

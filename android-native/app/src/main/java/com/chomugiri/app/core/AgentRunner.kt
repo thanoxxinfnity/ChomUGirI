@@ -194,13 +194,50 @@ fun runTerminalAgent(
         }
 
         emit(PipelineEvent.Failed("Agent hit the $maxSteps-step limit without finishing."))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         emit(PipelineEvent.Failed(e.message ?: "Terminal agent failed."))
     }
 }
 
-/** The concrete goal used by the "Build real APK" action. */
-fun apkBuildGoal(projectName: String): String = """
+/**
+ * True when the project is already a real native Android/Gradle project rather than a web app.
+ *
+ * This matters because the two cases need completely different build commands, and getting it
+ * wrong wastes the entire run: the coder now emits real Kotlin/Compose Gradle projects for any
+ * "make me an APK" request (see ANDROID_PROJECT_INSTRUCTIONS), and the old goal below assumed
+ * every project was a web app and tried to wrap it in Capacitor — which cannot work on a project
+ * that is already an Android app and fails after minutes of setup.
+ */
+fun isNativeAndroidProject(files: List<GeneratedFile>): Boolean =
+    files.any { it.path.endsWith("settings.gradle.kts") || it.path.endsWith("settings.gradle") } &&
+        files.any { it.path.endsWith("AndroidManifest.xml") }
+
+/** The concrete goal used by the "Build real APK" action, matched to what the project actually is. */
+fun apkBuildGoal(projectName: String, files: List<GeneratedFile> = emptyList()): String =
+    if (isNativeAndroidProject(files)) nativeApkBuildGoal() else webApkBuildGoal(projectName)
+
+private fun nativeApkBuildGoal(): String = """
+Build a real debug APK from the native Android project in this directory.
+
+This is already a complete Gradle project (settings.gradle.kts + AndroidManifest.xml are present).
+Do NOT use Capacitor, Cordova, npm or a 'www' directory — none of those apply here.
+
+ 1. Check that java is available and report its version; report clearly if it is missing.
+ 2. Make sure ANDROID_HOME (or ANDROID_SDK_ROOT) points at an Android SDK; report clearly if not.
+ 3. If there is no gradle wrapper (./gradlew), use a system 'gradle' if one exists; if neither is
+    available, say so plainly instead of guessing.
+ 4. Run the debug build (./gradlew assembleDebug --no-daemon, or gradle assembleDebug --no-daemon).
+ 5. If it fails to compile, read the actual error, fix the offending file, and build again — up to
+    three attempts. Report the real compiler error if it still fails.
+ 6. Print the absolute path of the produced .apk file.
+
+If a required tool or the Android SDK is genuinely missing, stop and say exactly what the user
+needs to install — do not pretend the build succeeded.
+""".trim()
+
+private fun webApkBuildGoal(projectName: String): String = """
 Build a real debug APK from the project in this directory.
 
 The project is a web app (HTML/CSS/JS or a node project). Wrap it with Capacitor and build it:

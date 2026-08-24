@@ -261,6 +261,8 @@ object LlmClient {
             PingResult(true, System.currentTimeMillis() - started, "OK")
         } catch (e: LlmException) {
             PingResult(false, System.currentTimeMillis() - started, e.message ?: "Failed")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             PingResult(false, System.currentTimeMillis() - started, e.message ?: "Failed")
         }

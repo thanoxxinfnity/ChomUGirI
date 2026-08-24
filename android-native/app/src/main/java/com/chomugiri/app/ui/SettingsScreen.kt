@@ -744,6 +744,8 @@ private fun GeminiHealthCheck(apiKey: String, model: String) {
                         state = try {
                             com.chomugiri.app.net.GeminiClient.generateImageDataUri(apiKey, model, "a small blue circle on a white background")
                             PingUiState.Done(true, System.currentTimeMillis() - started, "OK")
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             PingUiState.Done(false, System.currentTimeMillis() - started, e.message ?: "Failed")
                         }
@@ -786,6 +788,8 @@ private fun NvidiaImageHealthCheck(apiKey: String, model: String) {
                             com.chomugiri.app.net.NvidiaImageClient
                                 .generateImageDataUri(apiKey, model, "a small blue circle on a white background")
                             PingUiState.Done(true, System.currentTimeMillis() - started, "OK")
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             PingUiState.Done(false, System.currentTimeMillis() - started, e.message ?: "Failed")
                         }
@@ -828,6 +832,8 @@ private fun HuggingFaceHealthCheck(token: String, modelPath: String) {
                         state = try {
                             com.chomugiri.app.net.HuggingFaceClient.generateVideo(token, modelPath, "a small blue circle spinning")
                             PingUiState.Done(true, System.currentTimeMillis() - started, "OK")
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             PingUiState.Done(false, System.currentTimeMillis() - started, e.message ?: "Failed")
                         }

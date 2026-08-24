@@ -270,6 +270,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         addMessage(convId, Message(id = assistantId, role = "assistant", streaming = true))
 
         val startedAt = System.currentTimeMillis()
+        // Someone who just tapped Stop does not need a notification telling them it stopped.
+        var stoppedByUser = false
         val job = viewModelScope.launch {
             try {
                 // The router is a real AI decision (the Fast Chat role), not a keyword list — that
@@ -335,6 +337,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     Intent.PPTX -> consume(convId, assistantId, runPptxPipeline(text, s), text)
                     Intent.VIDEO -> consume(convId, assistantId, runVideoPipeline(text, s), text)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Stop was tapped (or the chat was deleted). This is not a failure, and it must not
+                // render as one — CancellationException carries a message like "StandaloneCoroutine
+                // was cancelled", which was being shown to the user verbatim in a red Build-failed
+                // banner. Leave whatever partial content arrived, note that it was stopped.
+                updateMessage(convId, assistantId) { m ->
+                    m.copy(
+                        streaming = false,
+                        content = m.content.ifBlank { "Stopped." },
+                        steps = m.steps.map { s -> if (s.done) s else s.copy(done = true) },
+                    )
+                }
+                stoppedByUser = true
+                throw e
             } catch (e: Exception) {
                 updateMessage(convId, assistantId) {
                     it.copy(streaming = false, error = e.message ?: "Something went wrong.")
@@ -353,7 +369,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // spam is how people end up muting the channel that carries the useful alerts.
                 finished?.let { m ->
                     val elapsed = System.currentTimeMillis() - startedAt
-                    val worthTelling = m.artifactId != null || m.error != null || elapsed > 25_000
+                    val worthTelling = !stoppedByUser &&
+                        (m.artifactId != null || m.error != null || elapsed > 25_000)
                     if (worthTelling) {
                         val title = conversationById(convId)?.title ?: "ChomuGiri"
                         if (m.error != null) notifyIfAway("Build failed - " + title, m.error)
@@ -387,11 +404,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             "You are $label, answering directly because the user picked you specifically for this message. Reply naturally and helpfully."
         val turns = listOf(ChatTurn("system", systemPrompt)) + history + ChatTurn("user", text)
         val sb = StringBuilder()
+        // Throttled, not per-token. Every updateMessage rebuilds the whole conversation list and
+        // recomposes the thread; a fast model emits tokens far quicker than a frame, so pushing
+        // each one meant dozens of full rebuilds per frame and visible jank on a long reply.
+        // 50ms is still ~20 visible updates a second, which reads as continuous typing.
+        var lastPush = 0L
         LlmClient.stream(provider, label, turns, temperature = 0.6, maxTokens = 2048)
             .collect { chunk ->
                 sb.append(chunk)
-                updateMessage(convId, msgId) { it.copy(content = sb.toString()) }
+                val now = System.currentTimeMillis()
+                if (now - lastPush >= STREAM_UI_INTERVAL_MS) {
+                    lastPush = now
+                    updateMessage(convId, msgId) { it.copy(content = sb.toString()) }
+                }
             }
+        // The throttle can swallow the final chunk, so the finished text is always written once.
+        updateMessage(convId, msgId) { it.copy(content = sb.toString()) }
     }
 
     private suspend fun consume(
@@ -405,6 +433,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val steps = mutableListOf<ThinkingStep>()
         val body = StringBuilder()
+        var lastChunkPush = 0L
         var artifactId: String? = initialArtifactId
         val startedAt = System.currentTimeMillis()
 
@@ -418,13 +447,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         steps[steps.lastIndex] = steps.last().copy(text = ev.text, done = true)
                     } else {
                         steps += ThinkingStep(ev.text, ev.done)
+                        // The coder streams one step per line of its reasoning, so a large build
+                        // could pile up hundreds — every one of them re-rendered in the bubble and
+                        // serialized into DataStore on save. Oldest lines drop off; a normal run
+                        // never reaches this, and the visible timeline is the recent part anyway.
+                        while (steps.size > MAX_STEPS_PER_MESSAGE) steps.removeAt(0)
                     }
                     updateMessage(convId, msgId) { it.copy(steps = steps.toList()) }
                 }
 
                 is PipelineEvent.Chunk -> {
                     body.append(ev.text)
-                    updateMessage(convId, msgId) { it.copy(content = body.toString()) }
+                    // Same throttle as runFastChat — see STREAM_UI_INTERVAL_MS. Done() always
+                    // writes the finished body, so a swallowed final chunk cannot be lost.
+                    val now = System.currentTimeMillis()
+                    if (now - lastChunkPush >= STREAM_UI_INTERVAL_MS) {
+                        lastChunkPush = now
+                        updateMessage(convId, msgId) { it.copy(content = body.toString()) }
+                    }
                 }
 
                 is PipelineEvent.Files -> {
@@ -472,6 +512,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
 
                 is PipelineEvent.Done -> {
+                    // Flush whatever the throttle held back before deciding what to show.
+                    if (body.isNotEmpty()) updateMessage(convId, msgId) { it.copy(content = body.toString()) }
                     if (body.isEmpty() && ev.files.isNotEmpty()) {
                         updateMessage(convId, msgId) {
                             it.copy(content = "Done — ${ev.files.size} file(s) ready. Open the project to view, export, or build it.")
@@ -482,7 +524,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         _artifacts.value = _artifacts.value.map {
                             if (it.id == id) it.copy(
                                 buildMs = elapsed,
-                                auditRounds = _settings.value.maxAuditLoops,
+                                // The mode's real audit count, not the retired maxAuditLoops
+                                // slider — that field is now only a migration fallback, so the
+                                // badge on the project was reporting a number no run ever used.
+                                auditRounds = _settings.value.mode().audits,
                                 resolvedBy = ev.resolvedBy.ifBlank { null } ?: it.resolvedBy,
                                 lastAuditIssues = ev.auditIssues.ifEmpty { it.lastAuditIssues },
                             ) else it
@@ -536,6 +581,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     temperature = 0.3, maxTokens = 512,
                     // A chatty model may explain itself first; the name is the last real line.
                 ).trim().lines().last { it.isNotBlank() }.trim().trim('"', '\'', '.', '`', '*')
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 return@launch
             }
@@ -632,6 +679,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 val fixed = parseFileBlocks(rewritten).firstOrNull()
                 if (fixed != null) updateFileContent(artifact.id, path, fixed.content)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Best-effort — the UI just stops showing the spinner; the file is left as-is.
             } finally {
@@ -664,6 +713,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (TerminalClient.connected.value) return
                 delayMs = (delayMs * 2).coerceAtMost(60_000L)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Best-effort background retry — a failure here must never take the app down.
         }
@@ -752,6 +803,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         else -> Unit
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 lastLine = e.message ?: "Unknown error"
                 appendAgentLog("\n\n[!] $lastLine")
@@ -769,7 +822,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun buildApkFromArtifact(artifact: Artifact) = runAgent(
-        apkBuildGoal(artifact.title), artifact.files,
+        apkBuildGoal(artifact.title, artifact.files), artifact.files,
         requiresConfirmation = true, artifactId = artifact.id, envVars = artifact.envVars,
     )
 
@@ -788,6 +841,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val result = try {
                 val r = VercelClient.deploy(_settings.value.vercelToken, artifact.title, artifact.files)
                 DeployUiState.Success(r.url)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DeployUiState.Failed(e.message ?: "Deploy failed.")
             }
@@ -820,6 +875,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val result = try {
                 val r = VercelClient.deploy(settings.vercelToken, artifact.title, artifact.files)
                 DeployUiState.Success(r.url)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DeployUiState.Failed(e.message ?: "Deploy failed.")
             }
@@ -840,15 +897,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- agent permission gate ----------
 
-    /** Suspends until the user taps Allow or Deny in the confirmation dialog. */
+    /**
+     * Suspends until the user taps Allow or Deny in the confirmation dialog.
+     *
+     * Two failure modes this has to survive, both reachable in normal use:
+     *
+     * - The waiting coroutine is cancelled while the dialog is up (Stop tapped during the "Build
+     *   this?" plan gate, or the chat deleted mid-build). Without invokeOnCancellation the request
+     *   stayed in _pendingPermission with nobody left listening, leaving a dead dialog on screen.
+     * - A second conversation reaches a gate while the first one's dialog is still open — this app
+     *   deliberately allows concurrent runs. Overwriting the StateFlow used to strand the first
+     *   coroutine with no dialog and no answer, suspended forever. It is now denied explicitly so
+     *   it fails fast and visibly instead of hanging.
+     */
     private suspend fun askPermission(kind: String, description: String): Boolean =
         kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-            _pendingPermission.value = AgentPermissionRequest(kind, description) { allowed ->
-                _pendingPermission.value = null
+            _pendingPermission.value?.respond?.invoke(false)
+            lateinit var request: AgentPermissionRequest
+            request = AgentPermissionRequest(kind, description) { allowed ->
+                // Only ever clear our own request, never one that has since replaced it.
+                if (_pendingPermission.value === request) _pendingPermission.value = null
                 if (cont.isActive) cont.resumeWith(Result.success(allowed))
+            }
+            _pendingPermission.value = request
+            cont.invokeOnCancellation {
+                if (_pendingPermission.value === request) _pendingPermission.value = null
             }
         }
 }
+
+/** How often a streaming response is allowed to push a UI update. See runFastChat. */
+private const val STREAM_UI_INTERVAL_MS = 50L
+
+/** Upper bound on retained reasoning steps per message — see the Step handler in consume(). */
+private const val MAX_STEPS_PER_MESSAGE = 120
 
 sealed class DeployUiState {
     data object Deploying : DeployUiState()

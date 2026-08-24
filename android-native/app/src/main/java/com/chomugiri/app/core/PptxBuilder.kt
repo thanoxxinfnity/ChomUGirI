@@ -38,7 +38,7 @@ object PptxBuilder {
 
             putXml("[Content_Types].xml", contentTypesXml(slides))
             putXml("_rels/.rels", RELS_DOT_RELS)
-            putXml("docProps/core.xml", coreXml(slides.first().title))
+            putXml("docProps/core.xml", coreXml(slides.firstOrNull()?.title ?: "Presentation"))
             putXml("docProps/app.xml", appXml(slides.size))
             putXml("ppt/presentation.xml", presentationXml(slides.size))
             putXml("ppt/_rels/presentation.xml.rels", presentationRelsXml(slides.size))

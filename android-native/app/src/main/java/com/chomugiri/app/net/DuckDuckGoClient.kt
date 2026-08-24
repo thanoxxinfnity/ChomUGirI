@@ -52,6 +52,8 @@ object DuckDuckGoClient {
                 val hits = searchOnce(query, maxResults)
                 if (hits.isNotEmpty()) return@withContext hits
                 lastError = SearchException("DuckDuckGo returned a challenge page instead of results (rate-limited).")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 lastError = e
             }
@@ -85,6 +87,8 @@ object DuckDuckGoClient {
         return try {
             val encoded = href.substringAfter("uddg=").substringBefore("&")
             URLDecoder.decode(encoded, "UTF-8")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             href
         }
@@ -107,6 +111,8 @@ object DuckDuckGoClient {
                 val text = doc.body()?.text()?.trim().orEmpty()
                 if (text.isBlank()) null else text.take(maxChars)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

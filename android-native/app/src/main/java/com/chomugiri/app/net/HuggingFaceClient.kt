@@ -52,6 +52,8 @@ object HuggingFaceClient {
                     val text = resp.body?.string().orEmpty()
                     val apiMsg = try {
                         JSONObject(text).optString("error").ifBlank { null }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         null
                     }

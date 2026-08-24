@@ -64,6 +64,8 @@ object SearchClient {
             }
             return try {
                 JSONObject(text)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 throw SearchException("$who returned a response that wasn't JSON.")
             }

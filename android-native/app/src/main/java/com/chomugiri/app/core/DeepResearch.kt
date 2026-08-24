@@ -54,6 +54,8 @@ fun runDeepResearch(
             emit(PipelineEvent.Step("Searching ${i + 1}/${queries.size}: $q"))
             val found = try {
                 SearchClient.search(settings.searchProvider, settings.searchApiKey, q)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emit(PipelineEvent.Step("Search failed: ${e.message}", done = true))
                 emptyList()
@@ -76,6 +78,8 @@ fun runDeepResearch(
             emit(PipelineEvent.Step("Reading ${hit.url}...", done = false))
             val text = try {
                 DuckDuckGoClient.fetchPageText(hit.url)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 null
             }
@@ -112,6 +116,8 @@ fun runDeepResearch(
         }
         emit(PipelineEvent.Chunk(refs))
         emit(PipelineEvent.Done(emptyList()))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         emit(PipelineEvent.Failed(e.message ?: "Deep Research failed."))
     }

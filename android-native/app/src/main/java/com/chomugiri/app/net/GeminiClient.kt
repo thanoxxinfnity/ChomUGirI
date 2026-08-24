@@ -58,6 +58,8 @@ object GeminiClient {
                 val text = resp.body?.string().orEmpty()
                 val json = try {
                     JSONObject(text)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     throw GeminiException("Gemini returned an unexpected response (HTTP ${resp.code}).")
                 }
@@ -90,6 +92,8 @@ object GeminiClient {
         if (b64.isBlank()) return null
         return try {
             Base64.decode(b64, Base64.DEFAULT)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

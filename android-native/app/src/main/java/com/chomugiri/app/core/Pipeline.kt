@@ -174,6 +174,8 @@ fun runPipeline(
                 temperature = 0.3, maxTokens = 700,
             )
             raw.lineSequence().map { it.trim() }.filter { it.startsWith("- ") }.joinToString("\n")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) { "" }
         if (plan.isNotBlank()) {
             emit(PipelineEvent.Step(plan, done = true))
@@ -254,6 +256,8 @@ fun runPipeline(
                     listOf(ChatTurn("system", GLM_AUDIT_SYSTEM_PROMPT), ChatTurn("user", filesToPromptBlock(files))),
                     temperature = 0.1, jsonMode = true,
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emit(PipelineEvent.Step("Audit failed: ${e.message ?: "unknown error"} — skipping this round. (Settings > Auditor > Test connection shows the exact error.)", done = true))
                 break
@@ -288,6 +292,8 @@ fun runPipeline(
                     ),
                     maxTokens = mode.maxTokens,
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emit(PipelineEvent.Step("$coder's fix call failed: ${e.message ?: "unknown error"} — keeping the last working version.", done = true))
                 break
@@ -323,6 +329,8 @@ fun runPipeline(
                     resolvedByParts += "DeepSeek R1 (fallback)"
                 }
                 emit(PipelineEvent.Step("DeepSeek R1's fix applied.", done = true))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emit(PipelineEvent.Step("DeepSeek R1 fallback failed: ${e.message ?: "unknown error"} — keeping GLM's last version.", done = true))
             }
@@ -360,6 +368,8 @@ fun runPipeline(
                         done = true,
                     )
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emit(PipelineEvent.Step("Nemotron safety check failed: ${e.message ?: "unknown error"} — shipping the last working version.", done = true))
             }
@@ -382,11 +392,15 @@ fun runPipeline(
                 files = withImages
                 emit(PipelineEvent.Files(files))
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(PipelineEvent.Step("Image generation step failed: ${e.message ?: "unknown error"} — shipping without it.", done = true))
         }
 
         emit(PipelineEvent.Done(files, resolvedByParts.joinToString(" + "), issuesToText(lastIssues).lines().filter { it.isNotBlank() }))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         emit(PipelineEvent.Failed(e.message ?: "Unexpected error in the pipeline."))
     }

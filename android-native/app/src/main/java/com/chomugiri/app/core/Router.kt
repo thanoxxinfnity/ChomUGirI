@@ -147,6 +147,8 @@ suspend fun classifyIntentAi(message: String, settings: AppSettings): Intent {
             "CHAT" in raw -> Intent.CHAT
             else -> classifyIntent(trimmed)
         }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (e: Exception) {
         // No key set, or the network call itself failed — fall back to the local heuristic
         // rather than silently dropping the message.
