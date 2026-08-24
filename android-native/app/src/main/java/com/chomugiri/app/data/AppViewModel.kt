@@ -312,7 +312,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             .filter { it.content.isNotBlank() && it.id != userMsgId && it.id != assistantId }
                             .takeLast(8)
                             .map { ChatTurn(it.role, it.content) }
-                        consume(convId, assistantId, runPipeline(text, s, history), text)
+                        // A follow-up in a conversation that already built something edits that
+                        // project — without this every message, even "add dark mode", started a
+                        // brand-new project from scratch and the coder never saw its own prior work.
+                        val existingArtifactId = (conversationById(convId)?.messages ?: emptyList())
+                            .lastOrNull { it.artifactId != null }?.artifactId
+                        val existingFiles = existingArtifactId
+                            ?.let { id -> _artifacts.value.firstOrNull { it.id == id }?.files }
+                            ?: emptyList()
+                        consume(
+                            convId, assistantId,
+                            runPipeline(
+                                text, s, history,
+                                onConfirmPlan = { plan -> askPermission("plan", plan) },
+                                existingFiles = existingFiles,
+                            ),
+                            text,
+                            initialArtifactId = existingArtifactId,
+                        )
                     }
                     Intent.RESEARCH -> consume(convId, assistantId, runDeepResearch(text, s), text)
                     Intent.PPTX -> consume(convId, assistantId, runPptxPipeline(text, s), text)
@@ -382,10 +399,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         msgId: String,
         flow: kotlinx.coroutines.flow.Flow<PipelineEvent>,
         prompt: String,
+        // Set when this run is a follow-up edit on a project this conversation already built —
+        // keeps the run attached to that same Artifact instead of minting a brand-new one.
+        initialArtifactId: String? = null,
     ) {
         val steps = mutableListOf<ThinkingStep>()
         val body = StringBuilder()
-        var artifactId: String? = null
+        var artifactId: String? = initialArtifactId
         val startedAt = System.currentTimeMillis()
 
         flow.collect { ev ->

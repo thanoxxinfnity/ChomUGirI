@@ -134,14 +134,55 @@ fun runPipeline(
     // and can't tell "make a website" -> its own clarifying questions -> the user's answer is
     // one continuous exchange, so it would just ask again forever instead of ever building.
     history: List<ChatTurn> = emptyList(),
+    /**
+     * Shows the user a short plan and waits for them to approve it before any real generation
+     * starts — the same shape as onConfirmRead in the terminal agent. Defaults to auto-approve so
+     * callers that do not care about this (there are none in the app today, but tests or future
+     * callers might not want the gate) are not forced to wire it.
+     */
+    onConfirmPlan: suspend (String) -> Boolean = { true },
+    /**
+     * The conversation's already-built project, if any. Non-empty means this is a follow-up edit,
+     * not a fresh build: the coder is told what already exists and only needs to emit what it's
+     * actually changing, and the result is merged onto this set instead of replacing it wholesale
+     * — the previous behavior threw the whole prior project away on every single message.
+     */
+    existingFiles: List<GeneratedFile> = emptyList(),
 ): Flow<PipelineEvent> = flow {
-    var files: List<GeneratedFile> = emptyList()
+    var files: List<GeneratedFile> = existingFiles
     // 0 means the LITE tier: Kimi's raw output only, no audit/fallback/safety pass at all.
     // One mode drives every knob below, instead of a lone audit counter.
     val mode = settings.mode()
     val maxLoops = mode.audits.coerceIn(0, 8)
 
     try {
+        // A cheap preview before the expensive part — but a nicety, never a blocker. Two real
+        // failure modes were caught testing this against the FAST role's actual default
+        // (nemotron-3-nano, a reasoning model): its chain-of-thought regularly leaks straight into
+        // the content field instead of staying in the separate reasoning_content the API also
+        // returns, and for some prompts that monologue is long enough to eat the whole token
+        // budget before any bullet line appears — repeatable across three different requests, not
+        // a one-off. Bullet-line extraction discards whatever came before the plan; if a network
+        // error, a truncated response, or a model that only ever rambles leaves nothing to extract,
+        // the step silently no-ops and the build proceeds unconfirmed rather than surfacing a
+        // blank or garbled confirmation dialog.
+        emit(PipelineEvent.Step("Planning..."))
+        val plan = try {
+            val raw = LlmClient.complete(
+                settings.provider(RoleKey.FAST), "Planner",
+                listOf(ChatTurn("system", PLAN_PROMPT)) + history + ChatTurn("user", prompt),
+                temperature = 0.3, maxTokens = 700,
+            )
+            raw.lineSequence().map { it.trim() }.filter { it.startsWith("- ") }.joinToString("\n")
+        } catch (e: Exception) { "" }
+        if (plan.isNotBlank()) {
+            emit(PipelineEvent.Step(plan, done = true))
+            if (!onConfirmPlan(plan)) {
+                emit(PipelineEvent.Failed("Cancelled — describe what should change and send it again."))
+                return@flow
+            }
+        }
+
         val coderCfg = settings.provider(RoleKey.KIMI)
         val coder = modelLabel(coderCfg, "The coder")
         emit(PipelineEvent.Step("$coder is reading your request..."))
@@ -150,9 +191,16 @@ fun runPipeline(
         // up in the bubble as it happens, instead of one frozen step for the whole generation.
         val progress = CoderStreamProgress()
         val kimiBuf = StringBuilder()
+        // Gives the coder the real content of what it already built, not just a "Done — N files"
+        // summary from chat history — without this it has zero visibility into the existing
+        // project and "add dark mode" silently starts a whole new one from scratch.
+        val userTurn = if (existingFiles.isNotEmpty()) {
+            "### EXISTING PROJECT FILES (edit these — do not re-emit a file you are not changing)\n" +
+                filesToPromptBlock(existingFiles) + "\n\n### USER REQUEST\n" + prompt
+        } else prompt
         LlmClient.stream(
             coderCfg, coder,
-            listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", prompt),
+            listOf(ChatTurn("system", KIMI_SYSTEM_PROMPT)) + history + ChatTurn("user", userTurn),
             temperature = mode.temperature, maxTokens = mode.maxTokens,
         ).collect { chunk ->
             kimiBuf.append(chunk)
@@ -167,8 +215,8 @@ fun runPipeline(
         }
         val (fileActions, kimiOut) = extractFileActions(scoreStripped)
         fileActions.forEach { emit(PipelineEvent.Step(it, done = true)) }
-        files = parseFileBlocks(kimiOut)
-        if (files.isEmpty()) {
+        val parsedFiles = parseFileBlocks(kimiOut)
+        if (parsedFiles.isEmpty()) {
             if (kimiOut.isBlank()) {
                 emit(PipelineEvent.Failed("$coder returned nothing — try a different model for the coder role in Settings."))
             } else {
@@ -180,6 +228,9 @@ fun runPipeline(
             }
             return@flow
         }
+        // Edit mode: Kimi only emitted the files it actually touched, so this layers onto the
+        // existing project rather than replacing it — a fresh build has nothing to layer onto.
+        files = if (existingFiles.isNotEmpty()) mergeFiles(existingFiles, parsedFiles) else parsedFiles
         emit(PipelineEvent.Files(files))
         emit(PipelineEvent.Step("Generated ${files.size} file(s).", done = true))
 

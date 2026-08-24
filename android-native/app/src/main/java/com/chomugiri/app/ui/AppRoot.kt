@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.IosShare
@@ -203,23 +206,30 @@ fun AppRoot(vm: AppViewModel) {
 
 @Composable
 private fun AgentPermissionDialog(req: com.chomugiri.app.data.AgentPermissionRequest) {
+    val (icon, title, confirmLabel, cancelLabel) = when (req.kind) {
+        "compile" -> listOf(Icons.Default.Android, "Compile on your machine?", "Allow", "Deny")
+        "plan" -> listOf(Icons.Default.Checklist, "Build this?", "Build it", "Cancel")
+        else -> listOf(Icons.Default.Description, "Read a file?", "Allow", "Deny")
+    }
     AlertDialog(
         onDismissRequest = { req.respond(false) },
         containerColor = BgElevated,
-        icon = {
-            Icon(
-                if (req.kind == "compile") Icons.Default.Android else Icons.Default.Description,
-                null,
-                tint = Accent,
+        icon = { Icon(icon as androidx.compose.ui.graphics.vector.ImageVector, null, tint = Accent) },
+        title = { Text(title as String) },
+        text = {
+            // A plan can run a few lines long; capped so a long one still leaves the two buttons
+            // on screen instead of pushing them off the bottom of a small phone.
+            Text(
+                req.description,
+                color = FgMuted,
+                modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
             )
         },
-        title = { Text(if (req.kind == "compile") "Compile on your machine?" else "Read a file?") },
-        text = { Text(req.description, color = FgMuted) },
         confirmButton = {
-            TextButton(onClick = { req.respond(true) }) { Text("Allow", color = Accent) }
+            TextButton(onClick = { req.respond(true) }) { Text(confirmLabel as String, color = Accent) }
         },
         dismissButton = {
-            TextButton(onClick = { req.respond(false) }) { Text("Deny", color = FgMuted) }
+            TextButton(onClick = { req.respond(false) }) { Text(cancelLabel as String, color = FgMuted) }
         },
     )
 }
