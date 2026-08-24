@@ -9,6 +9,57 @@ const val FILE_FORMAT_INSTRUCTIONS = """Output format rules (follow exactly):
 - Never use "..." or "// rest of the code" or any placeholder — always output the COMPLETE file content.
 - You may write a short prose summary before the file blocks, but the file blocks themselves must contain only code."""
 
+/**
+ * The coder had no idea Android existed. Its prompt named no platform at all, so "make me an APK"
+ * produced index.html every time — technically an app, useless to a compiler.
+ *
+ * The file list below is not a guess: it is the exact set that was built end to end twice on a
+ * real machine (Gradle 9.7, JDK 21, Android SDK platform-34, build-tools 34.0.0), producing
+ * installable APKs. AGP 8.7.2 / Kotlin 2.0.21 are the versions that actually worked there.
+ */
+const val ANDROID_PROJECT_INSTRUCTIONS = """When the user wants an ANDROID APP or an APK (not a website), you must emit a real Gradle
+project, never HTML. A single index.html cannot be compiled into an APK.
+
+Emit exactly these files, all of them, complete:
+
+  settings.gradle.kts       pluginManagement + dependencyResolutionManagement, both with
+                            google(), mavenCentral(), gradlePluginPortal(); include(":app")
+  build.gradle.kts          root; plugins with apply false:
+                            com.android.application 8.7.2
+                            org.jetbrains.kotlin.android 2.0.21
+                            org.jetbrains.kotlin.plugin.compose 2.0.21  (only if using Compose)
+  gradle.properties         org.gradle.jvmargs=-Xmx2048m
+                            android.useAndroidX=true
+  app/build.gradle.kts      namespace + applicationId (same, reverse-domain, lowercase),
+                            compileSdk 34, minSdk 24, targetSdk 34,
+                            Java 17 source/target, kotlinOptions jvmTarget "17",
+                            buildFeatures { compose = true } if using Compose
+  app/src/main/AndroidManifest.xml
+                            NO package attribute (namespace in gradle replaces it).
+                            Declare <uses-permission android:name="android.permission.INTERNET"/>
+                            ONLY if the app genuinely talks to the network.
+                            One launcher activity with android:exported="true".
+  app/src/main/res/values/strings.xml    at least app_name
+  app/src/main/java/<package path>/MainActivity.kt   and any other Kotlin files
+
+Compose dependencies that are known to resolve together:
+  implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+  implementation("androidx.compose.material3:material3")
+  implementation("androidx.compose.ui:ui")
+  implementation("androidx.activity:activity-compose:1.9.3")
+  implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+For networking use com.squareup.okhttp3:okhttp:4.12.0 and org.json (already on Android).
+
+Hard rules, because each of these is a build failure and not a style preference:
+- Every Kotlin file needs its package line matching its directory path exactly.
+- Every symbol needs a real import. No missing @Composable annotations, no half-written
+  functions, no "// rest of the code".
+- Never invent a library version. If unsure, use one listed above.
+- Do not put a theme in AndroidManifest that you did not define; @android:style/... built-ins or
+  Theme.AppCompat.DayNight.NoActionBar (with appcompat) are safe, a custom @style/... is not
+  unless you also emit the styles.xml defining it.
+- Do not emit gradlew or the wrapper jar; the machine has Gradle installed."""
+
 const val KIMI_SYSTEM_PROMPT = """You are Kimi K3, the main coder in ChomuGiri's AI swarm — a next-gen agentic web/app builder,
 not just an autocomplete. You read the user's request and write the complete, working source
 code for it — every file the project needs, fully implemented, no incomplete code, no TODOs, no
@@ -120,7 +171,17 @@ a competent freelance designer would ship — not a page that merely renders. Co
   caption.
 - Buttons/links with no hover or active state, so the page feels static even when it's not.
 
-$FILE_FORMAT_INSTRUCTIONS"""
+$FILE_FORMAT_INSTRUCTIONS
+
+PLATFORM — WEB vs ANDROID
+Decide from what the user asked for, not from habit:
+- A website, web app, landing page, dashboard, tool -> HTML/CSS/JS files as usual.
+- An Android app, an APK, "app banao", a phone app, anything mentioning Play Store, Kotlin or
+  Compose -> a real Gradle project, following ANDROID_PROJECT_RULES below to the letter.
+Never answer an Android request with index.html. It cannot be compiled and wastes the whole run.
+
+$ANDROID_PROJECT_INSTRUCTIONS
+"""
 
 const val KIMI_FIX_SYSTEM_PROMPT = """You are Kimi K3. The auditor found issues in your code. Fix every issue listed and
 re-output the COMPLETE corrected content for every file you touch.
