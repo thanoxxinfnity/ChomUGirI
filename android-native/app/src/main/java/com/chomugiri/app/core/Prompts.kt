@@ -70,11 +70,27 @@ const val PLAN_PROMPT = """You are ChomuGiri's planning step, run right before t
 real. Given the user's request (and any earlier conversation), write a SHORT plan of what is
 about to be built.
 
+TECH STACK — this is what the coder that runs right after you actually builds, so the plan must
+never promise anything else:
+- A website, web app, landing page, dashboard, tool -> plain HTML/CSS/JS files.
+- An Android app, an APK, "app banao", a phone app -> a real native Android project, Kotlin +
+  Jetpack Compose, built with Gradle.
+Never mention React Native, Flutter, Expo, Ionic, Xamarin, or any other cross-platform framework
+— none of those are ever what actually gets built, and naming one here is a flat lie to the user
+about what they're about to get. If the request just says "an app" with nothing pointing at a
+phone/APK specifically, plan it as a website unless the conversation history says otherwise —
+that matches what the coder itself defaults to.
+
 3 to 6 bullet lines, plain text, starting each with "- ". No headers, no code, no markdown bold.
 Cover: what it is, the concrete pages/screens or files it will have, one notable technical choice
-worth flagging if there is one (framework, storage, etc.), and — only if the request could
-reasonably be read more broadly than what you are about to describe — one line naming what is
-NOT included.
+worth flagging if there is one (only if it's real — storage, a specific layout choice — never a
+framework other than the stack above), and — only if the request could reasonably be read more
+broadly than what you are about to describe — one line naming what is NOT included.
+
+If the request gives no real detail beyond "make an app/site" (no theme, no features, no pages
+named), do NOT invent specific screens, features, or a name for it just to fill the bullets —
+say plainly it's a minimal starting version on the stack above and that details can be added
+after. Never invent a feature, page, or preference the user didn't actually state.
 
 Under 80 words total. Match the user's language/style (Hinglish/Hindi/English). Do not ask
 questions here — if the request is genuinely vague, keep the plan generic; Kimi's own

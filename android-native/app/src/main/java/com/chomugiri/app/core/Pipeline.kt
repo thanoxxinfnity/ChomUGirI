@@ -178,7 +178,12 @@ fun runPipeline(
         if (plan.isNotBlank()) {
             emit(PipelineEvent.Step(plan, done = true))
             if (!onConfirmPlan(plan)) {
-                emit(PipelineEvent.Failed("Cancelled — describe what should change and send it again."))
+                // Not an error — the thinking bubble is not the right place for a "Build failed"
+                // red state over a plain cancel. A normal chat reply instead, same shape as the
+                // "needs a bit more detail" path below, so the thread reads as a real reply you
+                // can just answer, not a broken build you have to retype from scratch.
+                emit(PipelineEvent.Chunk("Okay, cancelled — tell me what to change and send it again."))
+                emit(PipelineEvent.Done(emptyList()))
                 return@flow
             }
         }
