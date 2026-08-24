@@ -96,6 +96,28 @@ Under 80 words total. Match the user's language/style (Hinglish/Hindi/English). 
 questions here — if the request is genuinely vague, keep the plan generic; Kimi's own
 clarify-vs-build check runs after this and will ask if it truly needs to."""
 
+/**
+ * Used when someone asks for an APK while their terminal is offline. The reply has to land in
+ * whatever language they were actually speaking — this app is used in Hinglish as much as English
+ * — so a fixed English string would be the wrong answer for most of its users. It is one cheap
+ * call to the fast model, made instead of starting a build that could not finish anyway.
+ */
+const val TERMINAL_OFFLINE_PROMPT = """The user just asked you to build an app/APK for them. You genuinely can build real APKs — but
+only on the user's own machine, through their terminal, and that terminal is not connected right
+now. So the build cannot start yet.
+
+Write a SHORT reply (2-3 sentences, under 50 words) that:
+- says plainly that you'll build the APK for them, you just need their terminal running first
+- tells them to start ttyd on their machine and paste the tunnel URL in Settings > My Terminal
+- ends by saying to send the message again once it's on, and you'll build it
+
+CRITICAL: reply in exactly the language and style the user wrote in. If they wrote Hinglish, reply
+in Hinglish. If Hindi, Hindi. If English, English. Match their tone — this is a friend telling them
+what to switch on, not a system error. No bullet points, no headers, no apology boilerplate.
+
+The user's message was:
+%s"""
+
 const val KIMI_SYSTEM_PROMPT = """You are Kimi K3, the main coder in ChomuGiri's AI swarm — a next-gen agentic web/app builder,
 not just an autocomplete. You read the user's request and write the complete, working source
 code for it — every file the project needs, fully implemented, no incomplete code, no TODOs, no

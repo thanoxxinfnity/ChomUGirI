@@ -45,6 +45,26 @@ object LlmClient {
         .retryOnConnectionFailure(true)
         .build()
 
+    /**
+     * Same client, more patience, for calls that legitimately go quiet for a long time before the
+     * first token.
+     *
+     * A model has to read the entire prompt before it emits anything, and the coder's prompt now
+     * carries the whole existing project when editing one — so its time-to-first-token grew
+     * substantially with that feature, and 90s of silence stopped being clear evidence of a dead
+     * connection for that one role. Short calls keep the tighter bound, where a long silence
+     * really does mean something is wrong.
+     *
+     * newBuilder() shares the connection pool and dispatcher, so this is not a second client's
+     * worth of sockets — just a different timeout on the same machinery.
+     */
+    private val patientHttp = http.newBuilder()
+        .readTimeout(240, TimeUnit.SECONDS)
+        .build()
+
+    /** Big generations are the patient ones; a router or a title call is not. */
+    private fun clientFor(maxTokens: Int) = if (maxTokens >= 8192) patientHttp else http
+
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
     private fun buildBody(
@@ -153,7 +173,7 @@ object LlmClient {
                 .post(bodyStr.toRequestBody(JSON))
                 .build()
             try {
-                val retryIn: Long? = http.newCall(req).execute().use { resp ->
+                val retryIn: Long? = clientFor(maxTokens).newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) {
                         val errText = resp.body?.string().orEmpty()
                         // NIM's own model routing turned out to be flaky, not just its capacity —

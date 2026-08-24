@@ -155,3 +155,37 @@ suspend fun classifyIntentAi(message: String, settings: AppSettings): Intent {
         classifyIntent(trimmed)
     }
 }
+
+/**
+ * Whether the user is asking for something installable on a phone, as opposed to a website.
+ *
+ * Deliberately broad and multilingual: this app is used in Hinglish as much as English, and the
+ * cost of the two mistakes is very lopsided. A false positive costs one cheap connectivity check;
+ * a false negative means the user waits out a full build and is then handed source files when
+ * they wanted an APK.
+ */
+private val APK_WORDS = listOf(
+    "apk", "android app", "android application", "play store", "playstore",
+    "phone app", "mobile app", "app bana", "app banao", "app bna",
+    // "installable" on its own was a real false positive in testing: "make this an installable
+    // url" is a PWA request, not an APK one, and gating it would have told the user to go start a
+    // terminal they did not need. It only counts when it is explicitly an installable app/apk.
+    "installable app", "installable apk",
+)
+
+/**
+ * A bare "app" is ambiguous — plenty of people call a web app an app — so it only counts when
+ * nothing in the message points at the web instead. "kotlin" and "jetpack compose" are absent
+ * from the list above on purpose: they match questions about the language just as readily as
+ * build requests, and any real request that mentions them also says "app banao" or similar.
+ */
+private val WEB_WORDS = listOf(
+    "website", "web app", "webapp", "landing page", "web site", "site bana", "web page",
+    "pwa", "installable url", "installable link", "installable website",
+)
+
+fun wantsApk(message: String): Boolean {
+    val lower = message.lowercase()
+    if (WEB_WORDS.any { lower.contains(it) }) return false
+    return APK_WORDS.any { lower.contains(it) }
+}

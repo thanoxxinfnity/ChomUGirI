@@ -52,7 +52,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun syncBusy(status: String? = null) {
         _busyConversations.value = jobs.keys.toSet()
-        if (jobs.isEmpty()) BuildService.stop(getApplication())
+        // The terminal agent counts as work in flight too. It runs on viewModelScope rather than
+        // as a conversation job, so it was invisible here — and an APK compile now starts as the
+        // pipeline job is being removed, which meant the service stopped while the longest part of
+        // the whole flow was still running, with Android free to kill the process.
+        if (jobs.isEmpty() && !_agentRunning.value) BuildService.stop(getApplication())
         else BuildService.start(getApplication(), status ?: "Working...")
     }
 
@@ -307,6 +311,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         runFastChat(convId, assistantId, text, s.provider(role), ROLE_LABELS[role] ?: role.name, role)
                     }
                     Intent.PIPELINE -> {
+                        // Someone asking for an APK with no terminal connected cannot be served:
+                        // the compile happens on their machine, and nothing this app does can
+                        // substitute for that. Running the whole pipeline first and only then
+                        // admitting it wastes minutes of their time and their token budget, so
+                        // the check happens before any expensive call — and the answer comes back
+                        // in whatever language they actually wrote in.
+                        if (wantsApk(text) && !canBuildApk()) {
+                            explainTerminalOffline(convId, assistantId, text)
+                            return@launch
+                        }
                         // Real conversation history, not just this one isolated message — without
                         // it Kimi can't tell "make a website" -> its own clarifying question ->
                         // the user's answer is one continuous exchange, and would just ask again.
@@ -537,6 +551,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     // A freshly built website deploys itself — no manual Deploy tap needed. Only
                     // does anything when a Vercel token is set and the project is a real website.
                     artifactId?.let { autoDeployAndAnnounce(it) }
+                    // ...and a freshly built Android project compiles itself, for the same reason.
+                    // Asking for an app and being handed Kotlin source files is not finishing the
+                    // job; the APK is the thing that was actually wanted.
+                    artifactId?.let { id ->
+                        val art = _artifacts.value.firstOrNull { it.id == id }
+                        if (art != null && isNativeAndroidProject(art.files)) autoBuildApk(art)
+                    }
                 }
 
                 is PipelineEvent.Failed -> {
@@ -767,6 +788,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         if (_agentRunning.value) return
         _agentRunning.value = true
+        syncBusy("Building APK...")
         _agentLog.value = ""
         var succeeded = false
         var lastLine = ""
@@ -812,6 +834,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 appendAgentLog("\n\n[!] $lastLine")
             } finally {
                 _agentRunning.value = false
+                syncBusy()
                 artifactId?.let { id ->
                     val attempt = BuildAttempt(System.currentTimeMillis(), succeeded, lastLine.take(200))
                     _artifacts.value = _artifacts.value.map {
@@ -893,6 +916,56 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         file.writeBytes(bytes)
         return MessageFile(path = file.absolutePath, name = file.name, sizeBytes = file.length(), kind = "apk")
     }
+
+    /**
+     * Answers an APK request that cannot be started, in the user's own language.
+     *
+     * Written as a real model call rather than a fixed string because most of this app's use is
+     * Hinglish, and a hardcoded English sentence is the wrong answer for most of the people who
+     * will see it. If that one cheap call fails — which is entirely possible, since a dead network
+     * is one reason to be here — a plain bilingual fallback still says the useful thing rather
+     * than leaving the message empty.
+     */
+    private suspend fun explainTerminalOffline(convId: String, msgId: String, userText: String) {
+        val fallback = "Terminal abhi connected nahi hai, aur APK tumhari apni machine par hi ban " +
+            "sakta hai. ttyd start karke uska URL Settings > My Terminal me daal do, phir yehi " +
+            "message dobara bhejo — main APK bana dunga."
+        val reply = try {
+            LlmClient.complete(
+                _settings.value.provider(RoleKey.FAST), "Fast Chat",
+                listOf(ChatTurn("user", TERMINAL_OFFLINE_PROMPT.format(userText.take(400)))),
+                temperature = 0.4, maxTokens = 400,
+            ).trim().ifBlank { fallback }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            fallback
+        }
+        updateMessage(convId, msgId) { it.copy(streaming = false, content = reply, kind = "chat") }
+        persistConversations()
+    }
+
+    /**
+     * Compiles a just-generated Android project without waiting to be asked.
+     *
+     * Someone who says "make me an app" wants the app, not its source. Leaving the APK behind a
+     * separate tap in another screen meant the pipeline finished by handing over Kotlin files and
+     * calling that done. Guarded so it can only fire when it can actually succeed, and so it can
+     * never stack on top of a build already running.
+     */
+    private fun autoBuildApk(artifact: Artifact) {
+        if (_agentRunning.value) return
+        if (!canBuildApk()) return
+        buildApkFromArtifact(artifact)
+    }
+
+    /**
+     * Both conditions together, because either one alone blocks a compile just as completely.
+     * Checked before the pipeline starts and again before the build fires, so the two decisions
+     * can never disagree and leave a run that finishes with nothing to show for it.
+     */
+    private fun canBuildApk(): Boolean =
+        TerminalClient.connected.value && _settings.value.agentTerminalEnabled
 
     fun buildApkFromArtifact(artifact: Artifact) = runAgent(
         apkBuildGoal(artifact.title, artifact.files), artifact.files,
