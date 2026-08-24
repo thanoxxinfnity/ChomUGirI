@@ -196,13 +196,26 @@ private fun MessageRow(
                         when (part) {
                             is MessagePart.Code -> CodeBlock(part.lang, part.code)
                             is MessagePart.Prose -> SelectionContainer {
+                                // Asymmetric corners: the corner nearest the speaker is tucked in,
+                                // which is what makes a bubble read as pointing at its author
+                                // rather than floating between the two columns.
+                                val bubbleShape = if (isUser) {
+                                    RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp)
+                                } else {
+                                    RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp)
+                                }
                                 Surface(
-                                    color = if (isUser) Accent.copy(alpha = 0.16f) else BgElevated,
-                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (isUser) Accent.copy(alpha = 0.13f) else BgElevated,
+                                    shape = bubbleShape,
+                                    modifier = if (isUser) {
+                                        Modifier.hairlineAccent(bubbleShape, alpha = 0.35f)
+                                    } else {
+                                        Modifier.hairline(bubbleShape)
+                                    },
                                 ) {
                                     Text(
                                         part.text.trim(),
-                                        Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        Modifier.padding(horizontal = 15.dp, vertical = 11.dp),
                                         style = MaterialTheme.typography.bodyLarge,
                                     )
                                 }
@@ -234,12 +247,13 @@ private fun MessageRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         options.forEach { (letter, title) ->
+                            val pillShape = RoundedCornerShape(20.dp)
                             Surface(
                                 color = BgElevated,
-                                shape = RoundedCornerShape(20.dp),
+                                shape = pillShape,
                                 modifier = Modifier
                                     .widthIn(max = 260.dp)
-                                    .border(1.dp, Accent.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
+                                    .hairlineAccent(pillShape, alpha = 0.45f)
                                     .clickable { haptics.tap(); onPickOption("Option $letter: $title") },
                             ) {
                                 Row(
@@ -397,15 +411,16 @@ private fun CodeBlock(lang: String, code: String) {
 @Composable
 private fun ArtifactCard(artifact: Artifact, onOpen: () -> Unit) {
     val haptics = rememberHaptics()
+    val artShape = RoundedCornerShape(16.dp)
     Surface(
         color = BgElevated,
-        shape = RoundedCornerShape(14.dp),
+        shape = artShape,
         modifier = Modifier
             .widthIn(max = 560.dp)
-            .border(1.dp, Accent.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .hairlineAccent(artShape, alpha = 0.4f)
             .clickable { haptics.tap(); onOpen() },
     ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.FolderOpen, null, tint = Accent2, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
@@ -472,19 +487,20 @@ private fun ThinkingBubble(msg: Message) {
         else -> "Thought for ${msg.steps.size} step${if (msg.steps.size == 1) "" else "s"}"
     }
 
+    val cardShape = RoundedCornerShape(16.dp)
     Surface(
         color = BgElevated,
-        shape = RoundedCornerShape(14.dp),
+        shape = cardShape,
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, if (active) tint.copy(alpha = 0.35f) else BorderCol, RoundedCornerShape(14.dp)),
+            .then(if (active) Modifier.hairlineAccent(cardShape) else Modifier.hairline(cardShape)),
     ) {
         Column(Modifier.fillMaxWidth()) {
             Row(
                 Modifier
                     .fillMaxWidth()
                     .clickable { haptics.toggle(); pinned = !expanded }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PulsingIcon(
@@ -874,11 +890,12 @@ private fun FlowRowSuggestions(hasApiKey: Boolean, onSuggestion: (String) -> Uni
         modifier = Modifier.widthIn(max = 420.dp),
     ) {
         SUGGESTIONS.forEach { prompt ->
+            val suggestShape = RoundedCornerShape(20.dp)
             Surface(
                 color = BgElevated,
-                shape = RoundedCornerShape(20.dp),
+                shape = suggestShape,
                 modifier = Modifier
-                    .border(1.dp, BorderCol, RoundedCornerShape(20.dp))
+                    .hairline(suggestShape)
                     .clickable(enabled = hasApiKey) { onSuggestion(prompt) },
             ) {
                 Text(
@@ -957,7 +974,19 @@ private fun Composer(
                 .navigationBarsPadding()
                 .imePadding(),
         ) {
-            HorizontalDivider(color = BorderCol, thickness = 1.dp)
+            // A gradient fade rather than a hard rule. A 1px divider across the full width cuts
+            // the screen into two unrelated halves; a fade reads as the composer sitting in front
+            // of the thread, which is what it actually is.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.horizontalGradient(
+                            listOf(BorderCol.copy(alpha = 0f), BorderCol, BorderCol.copy(alpha = 0f)),
+                        )
+                    )
+            )
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -967,22 +996,22 @@ private fun Composer(
             ) {
                 com.chomugiri.app.core.BUILD_MODES.forEach { m ->
                     val selected = m.label == buildMode
+                    val chipShape = RoundedCornerShape(11.dp)
                     Surface(
-                        color = if (selected) Accent.copy(alpha = 0.22f) else BgElevated,
-                        shape = RoundedCornerShape(14.dp),
+                        color = if (selected) Accent.copy(alpha = 0.16f) else BgElevated,
+                        shape = chipShape,
                         modifier = Modifier
-                            .border(
-                                1.dp,
-                                if (selected) Accent.copy(alpha = 0.7f) else BorderCol,
-                                RoundedCornerShape(14.dp),
+                            .then(
+                                if (selected) Modifier.hairlineAccent(chipShape, alpha = 0.6f)
+                                else Modifier.hairline(chipShape)
                             )
                             .clickable { haptics.select(); onModeChange(m.label) },
                     ) {
                         Text(
                             m.label,
-                            Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            style = MonoStyle,
-                            color = if (selected) FgPrimary else FgMuted,
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) Accent else FgMuted,
                         )
                     }
                 }
@@ -1145,13 +1174,17 @@ private fun Composer(
                     onValueChange = { text = it },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Message ChomuGiri...", color = FgMuted) },
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(24.dp),
                     maxLines = 5,
+                    textStyle = MaterialTheme.typography.bodyLarge,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent.copy(alpha = 0.6f),
+                        // Only the focused field carries accent. An always-accented input makes
+                        // every screen look "active" and leaves focus with nothing left to signal.
+                        focusedBorderColor = Accent.copy(alpha = 0.65f),
                         unfocusedBorderColor = BorderCol,
                         focusedContainerColor = BgElevated,
                         unfocusedContainerColor = BgElevated,
+                        cursorColor = Accent,
                     ),
                 )
                 Spacer(Modifier.width(4.dp))

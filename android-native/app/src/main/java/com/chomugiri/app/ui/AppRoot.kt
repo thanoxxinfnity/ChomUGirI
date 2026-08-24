@@ -53,6 +53,7 @@ fun AppRoot(vm: AppViewModel) {
     val activeConvId by vm.activeConversationId.collectAsState()
     val artifacts by vm.artifacts.collectAsState()
     val activeArtifactId by vm.activeArtifactId.collectAsState()
+    val busy by vm.busyConversations.collectAsState()
 
     val openArtifact = artifacts.firstOrNull { it.id == activeArtifactId }
 
@@ -84,9 +85,16 @@ fun AppRoot(vm: AppViewModel) {
                         Modifier.padding(18.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Logomark(size = 34.dp)
-                        Spacer(Modifier.width(11.dp))
-                        Text("ChomuGiri", style = MaterialTheme.typography.titleLarge)
+                        Logomark(size = 36.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text("ChomuGiri", style = MaterialTheme.typography.titleLarge, color = FgPrimary)
+                            Text(
+                                "AI app & site builder",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = FgMuted,
+                            )
+                        }
                     }
 
                     DrawerItem(Icons.Default.Add, "New chat", false) {
@@ -133,7 +141,12 @@ fun AppRoot(vm: AppViewModel) {
 
                     LazyColumn(Modifier.weight(1f)) {
                         items(filteredChats, key = { it.id }) { c ->
-                            DrawerItem(Icons.Default.ChatBubbleOutline, c.title, c.id == activeConvId) {
+                            DrawerItem(
+                                Icons.Default.ChatBubbleOutline,
+                                c.title,
+                                c.id == activeConvId,
+                                busy = c.id in busy,
+                            ) {
                                 vm.selectConversation(c.id); screen = Screen.CHAT
                                 scope.launch { drawerState.close() }
                             }
@@ -154,23 +167,43 @@ fun AppRoot(vm: AppViewModel) {
         Column(Modifier.fillMaxSize().background(bg).statusBarsPadding()) {
             if (screen != Screen.SETTINGS) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(Icons.Default.Menu, "Menu")
+                        Icon(Icons.Default.Menu, "Menu", tint = FgPrimary, modifier = Modifier.size(21.dp))
                     }
-                    Text(
-                        when (screen) {
-                            Screen.CHAT -> conversations.firstOrNull { it.id == activeConvId }?.title ?: "ChomuGiri"
-                            Screen.ARTIFACTS -> "Projects"
-                            Screen.TERMINAL -> "My Terminal"
-                            Screen.SETTINGS -> "Settings"
-                        },
-                        Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when (screen) {
+                                Screen.CHAT -> conversations.firstOrNull { it.id == activeConvId }?.title ?: "ChomuGiri"
+                                Screen.ARTIFACTS -> "Projects"
+                                Screen.TERMINAL -> "My Terminal"
+                                Screen.SETTINGS -> "Settings"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = FgPrimary,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                        // A quiet second line instead of a bare title. On a chat it names what is
+                        // actually happening, which is the thing you look up to check.
+                        val subtitle = when (screen) {
+                            Screen.CHAT ->
+                                if (activeConvId != null && activeConvId in busy) "Working..."
+                                else null
+                            Screen.ARTIFACTS -> "${artifacts.size} project${if (artifacts.size == 1) "" else "s"}"
+                            else -> null
+                        }
+                        subtitle?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (screen == Screen.CHAT) Accent else FgMuted,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                     if (screen == Screen.CHAT) {
                         val activeConvo = conversations.firstOrNull { it.id == activeConvId }
                         if (activeConvo != null && activeConvo.messages.isNotEmpty()) {
@@ -186,6 +219,16 @@ fun AppRoot(vm: AppViewModel) {
                         }
                     }
                 }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                listOf(BorderCol.copy(alpha = 0f), BorderCol, BorderCol.copy(alpha = 0f)),
+                            )
+                        )
+                )
             }
 
             Crossfade(targetState = screen, label = "screen", animationSpec = tween(180)) { s ->
@@ -214,6 +257,7 @@ private fun AgentPermissionDialog(req: com.chomugiri.app.data.AgentPermissionReq
     AlertDialog(
         onDismissRequest = { req.respond(false) },
         containerColor = BgElevated,
+        shape = RoundedCornerShape(24.dp),
         icon = { Icon(icon as androidx.compose.ui.graphics.vector.ImageVector, null, tint = Accent) },
         title = { Text(title as String) },
         text = {
@@ -222,7 +266,8 @@ private fun AgentPermissionDialog(req: com.chomugiri.app.data.AgentPermissionReq
             Text(
                 req.description,
                 color = FgMuted,
-                modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState()),
             )
         },
         confirmButton = {
