@@ -136,9 +136,8 @@ fun runPipeline(
     history: List<ChatTurn> = emptyList(),
     /**
      * Shows the user a short plan and waits for them to approve it before any real generation
-     * starts — the same shape as onConfirmRead in the terminal agent. Defaults to auto-approve so
-     * callers that do not care about this (there are none in the app today, but tests or future
-     * callers might not want the gate) are not forced to wire it.
+     * starts. Defaults to auto-approve so callers that do not want the gate (tests, or a future
+     * caller) are not forced to wire it.
      */
     onConfirmPlan: suspend (String) -> Boolean = { true },
     /**

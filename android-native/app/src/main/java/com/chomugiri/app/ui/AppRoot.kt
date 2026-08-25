@@ -248,9 +248,13 @@ fun AppRoot(vm: AppViewModel) {
 
 @Composable
 private fun AgentPermissionDialog(req: com.chomugiri.app.data.AgentPermissionRequest) {
+    // "plan" is the only gate left. The compile and file-read confirmations were both removed:
+    // tapping Build already is the decision to compile, and a real build reads files constantly,
+    // so per-read prompts turned one tap into a dozen. The fallback stays generic rather than
+    // describing a kind that no longer exists.
     val (icon, title, confirmLabel, cancelLabel) = when (req.kind) {
         "plan" -> listOf(Icons.Default.Checklist, "Build this?", "Build it", "Cancel")
-        else -> listOf(Icons.Default.Description, "Read a file?", "Allow", "Deny")
+        else -> listOf(Icons.Default.Description, "Continue?", "Allow", "Cancel")
     }
     AlertDialog(
         onDismissRequest = { req.respond(false) },

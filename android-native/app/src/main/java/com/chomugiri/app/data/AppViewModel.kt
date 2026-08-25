@@ -73,7 +73,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _agentRunning = MutableStateFlow(false)
     val agentRunning: StateFlow<Boolean> = _agentRunning.asStateFlow()
 
-    /** Non-null while the terminal agent is waiting on an explicit read/compile confirmation. */
+    /** Non-null while a run is waiting on the user to approve its plan. */
     private val _pendingPermission = MutableStateFlow<AgentPermissionRequest?>(null)
     val pendingPermission: StateFlow<AgentPermissionRequest?> = _pendingPermission.asStateFlow()
 
@@ -816,7 +816,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 runTerminalAgent(
                     goal, _settings.value, files,
-                    onConfirmRead = { path -> askPermission("read", "Let ChomuGiri read \"$path\" on your machine?") },
                     envVars = envVars,
                 ).collect { ev ->
                     when (ev) {

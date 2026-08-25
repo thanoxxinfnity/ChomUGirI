@@ -51,8 +51,6 @@ fun runTerminalAgent(
     files: List<GeneratedFile> = emptyList(),
     workDir: String = "~/chomugiri-build",
     maxSteps: Int = 25,
-    /** Called before a file-read command runs; the run stops if this returns false. */
-    onConfirmRead: suspend (path: String) -> Boolean = { true },
     /** Project env vars — actually exported into the shell before any build command runs. */
     envVars: Map<String, String> = emptyMap(),
 ): Flow<PipelineEvent> = flow {
@@ -179,12 +177,13 @@ fun runTerminalAgent(
                 continue
             }
 
+            // Reading a file used to pop a confirmation dialog every single time. A real build
+            // reads constantly — gradle logs, manifests, a failing source file it is about to fix —
+            // so one "Build APK" tap turned into a dozen Allow taps, which is not consent, it is an
+            // obstacle course. The consent is the Settings toggle that let the agent near this
+            // terminal at all. What is being read is still named in the log, so nothing is hidden.
             readTarget(command)?.let { path ->
-                emit(PipelineEvent.Step("Waiting for permission to read $path...", done = true))
-                if (!onConfirmRead(path)) {
-                    emit(PipelineEvent.Failed("Read of $path was not allowed — stopping."))
-                    return@flow
-                }
+                emit(PipelineEvent.Step("Reading $path", done = true))
             }
 
             emit(PipelineEvent.Step("[$step] ${thought.ifEmpty { command }}"))
